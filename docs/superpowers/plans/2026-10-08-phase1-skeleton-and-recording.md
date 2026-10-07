@@ -56,9 +56,9 @@
 | `lib/domain/types.dart` | 实体：`Exercise` / `WorkoutSession` / `SessionExercise` / `SetEntry` / `SetLike` |
 | `lib/domain/metrics.dart` | 容量负荷、e1RM |
 | `lib/domain/rest.dart` | 30 分钟闸门判定 |
-| `lib/domain/restAdvice.dart` | 组间休息提示 5 分支 |
+| `lib/domain/rest_advice.dart` | 组间休息提示 5 分支 |
 | `lib/domain/format.dart` | 日期 / 时间 / 时长格式化 |
-| `lib/domain/sessionLabel.dart` | 「深蹲 等 3 个动作 · 已记 12 组」 |
+| `lib/domain/session_label.dart` | 「深蹲 等 3 个动作 · 已记 12 组」 |
 | `lib/data/db/sql_executor.dart` | `SqlExecutor` 接口 |
 | `lib/data/db/sqflite_executor.dart` | 生产实现（Android 用 sqflite，Chrome 用 ffi_web） |
 | `lib/data/db/ffi_executor.dart` | 测试与桌面实现（内存库） |
@@ -718,11 +718,11 @@ git commit -m "feat(domain): 实体类型、容量负荷与 e1RM 口径、30 分
 
 ---
 
-### Task 2: `domain/restAdvice.dart` —— 组间休息提示 5 分支
+### Task 2: `domain/rest_advice.dart` —— 组间休息提示 5 分支
 
 **Files:**
-- Create: `lib/domain/restAdvice.dart`
-- Test: `test/domain/restAdvice_test.dart`
+- Create: `lib/domain/rest_advice.dart`
+- Test: `test/domain/rest_advice_test.dart`
 
 **Interfaces:**
 - Consumes: 无
@@ -733,11 +733,11 @@ git commit -m "feat(domain): 实体类型、容量负荷与 e1RM 口径、30 分
 
 - [ ] **Step 1: 写失败的测试**
 
-`test/domain/restAdvice_test.dart`：
+`test/domain/rest_advice_test.dart`：
 
 ```dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gym_tracker/domain/restAdvice.dart';
+import 'package:gym_tracker/domain/rest_advice.dart';
 
 void main() {
   test('组数少于 3 时明确沉默，不给任何提示', () {
@@ -801,17 +801,22 @@ void main() {
   test('次数数组原样返回，供界面核对', () {
     final f = buildRestFeedback([12, 10, 9], [60, 60, null])!;
     expect(f.reps, [12, 10, 9]);
-    expect(f.message, contains('12 / 10 / 9'));
+    // ⚠️ 计划初版这里断言的是 `contains('12 / 10 / 9')`，**那是错的**：
+    // [12,10,9] 的 drop = 3，走 extend30CheckWeight 分支，而该分支的文案按
+    // 规格 §4.3 是「末组 {first} → {last}…」，**不含整串次数数组**。
+    // 「次数数组必须原样显示」这条约束是由总结页的卡片首行单独渲染满足的
+    // （见 Task 18 的 summary_page.dart），不是由 message 满足的。
+    expect(f.message, contains('末组 12 → 9'));
   });
 }
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `flutter test test/domain/restAdvice_test.dart`
-Expected: FAIL —— `restAdvice.dart` 不存在
+Run: `flutter test test/domain/rest_advice_test.dart`
+Expected: FAIL —— `rest_advice.dart` 不存在
 
-- [ ] **Step 3: 写 `lib/domain/restAdvice.dart`**
+- [ ] **Step 3: 写 `lib/domain/rest_advice.dart`**
 
 ```dart
 /// 建议的类型标签。界面若要按类型上色 / 配图标，认这个字段，
@@ -954,25 +959,25 @@ RestFeedback? buildRestFeedback(List<int> reps, List<int?> rests) {
 
 - [ ] **Step 4: 跑测试确认通过**
 
-Run: `flutter test test/domain/restAdvice_test.dart -v`
+Run: `flutter test test/domain/rest_advice_test.dart -v`
 Expected: `All tests passed!`（10 个测试）
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git add lib/domain/restAdvice.dart test/domain/restAdvice_test.dart
+git add lib/domain/rest_advice.dart test/domain/rest_advice_test.dart
 git commit -m "feat(domain): 组间休息提示 5 分支，含强制正反馈与粗略参考口径"
 ```
 
 ---
 
-### Task 3: `domain/format.dart` + `domain/sessionLabel.dart`
+### Task 3: `domain/format.dart` + `domain/session_label.dart`
 
 **Files:**
 - Create: `lib/domain/format.dart`
-- Create: `lib/domain/sessionLabel.dart`
+- Create: `lib/domain/session_label.dart`
 - Test: `test/domain/format_test.dart`
-- Test: `test/domain/sessionLabel_test.dart`
+- Test: `test/domain/session_label_test.dart`
 
 **Interfaces:**
 - Consumes: 无
@@ -1038,6 +1043,26 @@ void main() {
 
   test('formatDuration —— 超过 1 小时带小时', () {
     expect(formatDuration(3725), '1 小时 2 分');
+  });
+
+  // formatClock 是休息界面那个一直在跳的钟面。计划初版漏了它的测试，
+  // 但计划自己的注里写明它「是纯函数且必须可单测（00:00 与进位是边界）」。
+
+  test('formatClock —— 零点显示 00:00，不能是 0:0', () {
+    expect(formatClock(0), '00:00');
+  });
+
+  test('formatClock —— 分秒都补零', () {
+    expect(formatClock(65), '01:05');
+    expect(formatClock(59), '00:59');
+  });
+
+  test('formatClock —— 超过一小时不进位到小时，分继续累加（钟面不换行）', () {
+    expect(formatClock(3920), '65:20');
+  });
+
+  test('formatClock —— 负数夹到 00:00（时钟回拨等异常不该显示负数）', () {
+    expect(formatClock(-5), '00:00');
   });
 }
 ```
@@ -1127,15 +1152,15 @@ String formatDuration(int seconds) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `flutter test test/domain/format_test.dart -v`
-Expected: `All tests passed!`（9 个测试）
+Expected: `All tests passed!`（**13** 个测试 —— 计划初版写 9，补上 formatClock 的 4 条后为 13）
 
 - [ ] **Step 5: 写失败的测试 —— 训练进度描述**
 
-`test/domain/sessionLabel_test.dart`：
+`test/domain/session_label_test.dart`：
 
 ```dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gym_tracker/domain/sessionLabel.dart';
+import 'package:gym_tracker/domain/session_label.dart';
 
 ExerciseProgress ex(String name, int done, {int pending = 0}) => ExerciseProgress(
       exerciseName: name,
@@ -1173,10 +1198,10 @@ void main() {
 
 - [ ] **Step 6: 跑测试确认失败**
 
-Run: `flutter test test/domain/sessionLabel_test.dart`
-Expected: FAIL —— `sessionLabel.dart` 不存在
+Run: `flutter test test/domain/session_label_test.dart`
+Expected: FAIL —— `session_label.dart` 不存在
 
-- [ ] **Step 7: 写 `lib/domain/sessionLabel.dart`**
+- [ ] **Step 7: 写 `lib/domain/session_label.dart`**
 
 ```dart
 /// `describeExercises` 需要的**最小**形状：只需要动作名和每组是否完成。
@@ -1222,7 +1247,7 @@ String describeExercises(List<ExerciseProgress> exercises) {
 - [ ] **Step 8: 跑测试确认通过**
 
 Run: `flutter test test/domain/`
-Expected: `All tests passed!`（16 + 10 + 9 + 5 = **40** 个测试）
+Expected: `All tests passed!`（16 + 10 + 13 + 5 = **44** 个测试）
 
 - [ ] **Step 9: 提交**
 
@@ -3184,21 +3209,21 @@ Expected: `All tests passed!`（7 个测试）
 Run: `flutter test`
 Expected: `All tests passed!`
 
-此时全量总数应为 **84 条**：
+此时全量总数预期约 **93 条**：
 
-| 来源 | 条数 |
-|---|---|
-| `test/smoke/database_smoke_test.dart` | 2 |
-| Task 1（domain metrics + rest） | 16 |
-| Task 2（restAdvice） | 10 |
-| Task 3（format + sessionLabel） | 9 |
-| Task 4（layering） | 5 |
-| Task 5（migrations） | 6 |
-| Task 6（exercise_repo） | 8 |
-| Task 7（session_repo） | 10 |
-| Task 8（set_repo） | 11 |
-| Task 9（settings_repo） | 7 |
-| **合计** | **84** |
+| 来源 | 条数 | 状态 |
+|---|---|---|
+| `test/smoke/database_smoke_test.dart` | 2 | ✅ 实测 |
+| Task 1（metrics 9 + rest 7） | 16 | ✅ 实测 |
+| Task 2（rest_advice） | 10 | ✅ 实测 |
+| Task 3（format 13 + session_label 5） | 18 | ✅ 实测 |
+| Task 4（layering） | 5 | 待做 |
+| Task 5（migrations） | 6 | 待做 |
+| Task 6（exercise_repo） | 8 | 待做 |
+| Task 7（session_repo） | 10 | 待做 |
+| Task 8（set_repo） | 11 | 待做 |
+| Task 9（settings_repo） | 7 | 待做 |
+| **合计** | **约 93** | |
 
 > **条数只是参考，不是判据。** 计划初版给的几个数字（8 / 15 / 39 / 86）有误，
 > 已按实际修正 —— 但真正的判据永远是「全绿」，不是「等于某个数」。
@@ -3495,7 +3520,7 @@ class ActiveExercise {
         sets: sets ?? this.sets,
       );
 
-  /// 给 `domain/sessionLabel.dart` 用 —— 它只认动作名与每组的完成状态。
+  /// 给 `domain/session_label.dart` 用 —— 它只认动作名与每组的完成状态。
   ExerciseProgress get progress => ExerciseProgress(
         exerciseName: exerciseName,
         sets: sets.map((s) => SetProgress(isCompleted: s.isCompleted)).toList(),
@@ -4022,7 +4047,7 @@ import 'package:gym_tracker/data/repositories/exercise_repo.dart';
 import 'package:gym_tracker/data/repositories/session_repo.dart';
 import 'package:gym_tracker/data/repositories/set_repo.dart';
 import 'package:gym_tracker/domain/metrics.dart';
-import 'package:gym_tracker/domain/restAdvice.dart';
+import 'package:gym_tracker/domain/rest_advice.dart';
 import 'package:gym_tracker/state/active_session_controller.dart';
 
 /// 端到端回归：一条链串起 5 条主旅程。
@@ -4205,7 +4230,7 @@ Expected: `All tests passed!`（5 个测试）
 
 > ⚠️ **一处实施时要专门确认的疑点（写本计划时发现的）。**
 >
-> `domain/restAdvice.dart` 的文档说「最后那一组通常是 null（它是最后一组，
+> `domain/rest_advice.dart` 的文档说「最后那一组通常是 null（它是最后一组，
 > 没有『组后休息』）」。但实现上：`completeCurrentSet` 会给**刚完成的每一组**
 > 调 `startRest`，而 `endWorkout` 又会把「正在进行的那段休息」结掉 ——
 > 于是**最后完成的那一组**的 `rest_seconds` 会是一个接近 0 的值，而不是 null。
@@ -5222,7 +5247,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/repositories/session_repo.dart';
 import '../../domain/format.dart';
-import '../../domain/sessionLabel.dart';
+import '../../domain/session_label.dart';
 import '../../domain/types.dart';
 import '../../state/active_session_controller.dart';
 import '../../ui/theme.dart';
@@ -6293,7 +6318,7 @@ import '../../data/repositories/exercise_repo.dart';
 import '../../data/repositories/session_repo.dart';
 import '../../data/repositories/set_repo.dart';
 import '../../domain/metrics.dart';
-import '../../domain/restAdvice.dart';
+import '../../domain/rest_advice.dart';
 import '../../domain/types.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';

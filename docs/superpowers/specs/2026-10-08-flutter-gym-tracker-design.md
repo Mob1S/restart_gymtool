@@ -60,7 +60,7 @@ lib/
     types.dart
     metrics.dart           容量负荷、e1RM
     rest.dart              30 分钟闸门
-    restAdvice.dart        组间休息提示
+    rest_advice.dart       组间休息提示
     format.dart            时长 / 重量 / 日期格式化（「今天 15:43」）
   data/
     db/
