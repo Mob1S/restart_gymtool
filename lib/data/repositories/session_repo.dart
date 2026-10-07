@@ -156,9 +156,9 @@ Future<List<WorkoutSession>> listSessions(SqlExecutor exec, int limit) async {
 
 /// 往训练里追加一个动作，`position` 取当前最大值 +1（第一个动作是 0）。
 ///
-/// **不预建第一组** —— 那是 `ActiveSessionController.addExerciseWithFirstSet`
-/// 的职责，因为它还要顺带沿用上次的重量 / 次数。只调本函数的话，
-/// 界面上的「完成这组」会因为没有待完成的组而毫无反应。
+/// **不预建第一组** —— 那是 `ActiveSessionController.addExercise`（内部走
+/// `_addExerciseWithFirstSet`）的职责，因为它还要顺带沿用上次的重量 / 次数。
+/// 只调本函数的话，界面上的「完成这组」会因为没有待完成的组而毫无反应。
 Future<SessionExercise> addExerciseToSession(
   SqlExecutor exec,
   String sessionId,
