@@ -509,3 +509,24 @@ webSocketDebuggerUrl : ws://127.0.0.1:62062/devtools/page/E033D9A9A7425CD4D2061F
 
 **没有任何一步是失败的。**两个需要重跑才成功的地方（`pub global activate webdev`、
 `flutter run -d chrome`）都已在 §6-3 / §6-6 记录了原始错误与重跑结果。
+
+---
+
+## 9. 日常怎么跑测试（Task 12 补记）
+
+```powershell
+# 日常快速反馈：跳过 e2e（也顺带跳过 smoke）
+flutter test test/domain test/data test/state test/layering_test.dart
+
+# 提交前：完整跑一遍（**这一步不能省**）
+flutter test
+```
+
+**约定**：端到端回归放在 `test/e2e/` 这个独立目录里，靠**路径**区分即可 ——
+**不要**引入 `@Tags` 注解或 `dart_test.yaml`。多一层测试框架配置只会多一处
+将来会失效的地方。
+
+> **但 e2e 不能被永久排除。** 它是唯一能发现「分层各自都绿、但层与层之间
+> 假设不一致」的那一层 —— 旧项目这条链第一次跑就抓出一个分层测试没抓到的问题。
+> 本项目的 Task 12 也已经印证：它在实施期间暴露了「同时至多一段休息在进行」
+> 这条不变量只由界面守着（详见计划 Task 11 那节的说明）。

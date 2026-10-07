@@ -3872,7 +3872,32 @@ git commit -m "feat(state): 编排层 resume / startNew / addExercise，冲突�
 
 **Interfaces:**
 - Consumes: Task 10 的 `ActiveSessionController`
-- Produces: `completeCurrentSet` / `beginNextSet` / `endWorkout` / `reset` 的完整实现
+- Produces: `completeCurrentSet` / `beginNextSet` / `endWorkout` / `reset` 的完整实现，
+  外加私有的 `_findAnyResting()`（会话级寻找正在进行的那段休息）
+
+> ⭐ **实施时补上的一条不变量：「同时至多一段休息在进行」，由编排层把守。**
+>
+> 计划初版的 `beginNextSet` / `endWorkout` **只在当前动作的组里**找休息
+> （`active.sets.where(...)`）。实施 Task 12 的端到端测试时发现这条路是通的，
+> 而且**界面真实可达**：
+>
+> 1. 深蹲完成一组 → 深蹲进入休息，body 显示休息界面
+> 2. **动作条渲染在 body 之外**（换动作不必退出记录界面，这是刻意的设计）
+>    → 用户点「卧推」的 chip → body 切回卧推的记录态
+> 3. 点「✓ 完成这组」→ 卧推也开始休息 → **两段休息同时在跑**
+> 4. `beginNextSet` 只结束找到的那一段 → 另一段的 `rest_seconds`
+>    **永远是 NULL**，总结页平均休息少一个数据点，**且不报错**
+>
+> **处置**：新增私有的 `_findAnyResting()`（跨全部动作找），
+> 在 `completeCurrentSet` 开始新一段休息**之前**先结掉上一段；
+> `beginNextSet` 与 `endWorkout` 也改用它。
+>
+> 这符合旧文档 §5.8 那条「防御性闸门」的精神 ——
+> **不变量该由编排层把守，而不是靠界面碰巧不显示按钮。**
+>
+> **已做变异验证**：撤掉 `completeCurrentSet` 里那道闸门，
+> 新加的那条测试报 `Expected: null, Actual: <1791401830293>`
+> （深蹲那段的 `restStartedAt` 一直没被清掉）。
 
 - [ ] **Step 1: 写失败的测试**
 

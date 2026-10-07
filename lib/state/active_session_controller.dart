@@ -157,6 +157,14 @@ class ActiveSessionController extends ChangeNotifier {
 
     final now = DateTime.now().millisecondsSinceEpoch;
 
+    // 开始新的一段休息之前，先把**会话里**还在进行的那一段结掉。
+    // 理由见 [_findAnyResting] —— 这是「同时至多一段休息在进行」这条
+    // 不变量在编排层的守门人，不能只靠界面。
+    final previousRest = _findAnyResting();
+    if (previousRest != null) {
+      await endRest(_exec, previousRest.id, now);
+    }
+
     // 顺序不能反：先把用户填的数值写进去，再标记完成。
     // 反过来一旦中途失败，就会留下「已完成但数值是旧的」的记录 ——
     // 而全局约束要求每完成一组立刻落盘，用户看到的就是最终记录。
@@ -181,9 +189,10 @@ class ActiveSessionController extends ChangeNotifier {
     if (currentIndex < 0 || currentIndex >= exercises.length) return;
 
     final active = exercises[currentIndex];
-    final resting = _firstOrNull(
-      active.sets.where((s) => s.isCompleted && s.restStartedAt != null),
-    );
+
+    // **会话级**查找，不是只看当前动作 —— 见 [_findAnyResting]。
+    // 「开始下一组」的意思是「休息结束了」，与哪一段无关。
+    final resting = _findAnyResting();
     if (resting != null) {
       await endRest(_exec, resting.id, DateTime.now().millisecondsSinceEpoch);
     }
@@ -193,10 +202,45 @@ class ActiveSessionController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 找出**整场训练里**正在进行的那一段休息（不属于某个动作，跨全部动作找）。
+  ///
+  /// ## 为什么必须是会话级的
+  ///
+  /// 「同时至多一段休息在进行」是一条真实的不变量：`rest_seconds` 存在
+  /// **本组做完之后**那段休息上，而结算它的入口（[beginNextSet] /
+  /// [completeCurrentSet] / [endWorkout]）只会结束找到的那一段 ——
+  /// 若同时有两段在跑，另一段的 `rest_seconds` **永远是 NULL**，
+  /// 总结页的平均休息就少了一个数据点，而且**不报错**。
+  ///
+  /// ## 为什么不能只靠界面
+  ///
+  /// 记录页的动作条渲染在 body **之外**（换动作不必退出记录界面，这是刻意的），
+  /// 而 body 只在**当前动作**在休息时才显示休息界面。于是这条路是通的：
+  ///
+  /// 1. 深蹲完成一组 → 深蹲进入休息，body 显示休息界面
+  /// 2. **动作条还在** → 用户点「卧推」的 chip，body 切回卧推的记录态
+  /// 3. 点「✓ 完成这组」→ 卧推也开始休息 → **两段休息同时在跑**
+  ///
+  /// 所以这条不变量由编排层把守，而不是靠界面碰巧不显示按钮。
+  ///
+  /// 返回 null 表示当前没有在休息。
+  SetEntry? _findAnyResting() {
+    for (final item in exercises) {
+      final found = _firstOrNull(
+        item.sets.where((s) => s.isCompleted && s.restStartedAt != null),
+      );
+      if (found != null) return found;
+    }
+    return null;
+  }
+
   /// 结束并**立刻清空** controller。
   ///
   /// 收尾：如果正处在休息中，先把这段休息结掉，否则这一组的 `rest_seconds`
   /// 永远是 NULL，总结页算不出平均休息。
+  ///
+  /// **按会话找，不是只看当前动作** —— 用户可能在别的动作上还挂着一段休息
+  /// （见 [_findAnyResting]），只看当前动作会漏掉它。
   ///
   /// 结束之后立刻清内存，而不是等用户在总结页点「完成」——
   /// 「已经结束但还是当前训练」这个中间态正是旧项目「主页一直显示继续上次训练」
@@ -210,14 +254,9 @@ class ActiveSessionController extends ChangeNotifier {
     final current = session;
     if (current == null) return null;
 
-    if (currentIndex >= 0 && currentIndex < exercises.length) {
-      final active = exercises[currentIndex];
-      final resting = _firstOrNull(
-        active.sets.where((s) => s.isCompleted && s.restStartedAt != null),
-      );
-      if (resting != null) {
-        await endRest(_exec, resting.id, DateTime.now().millisecondsSinceEpoch);
-      }
+    final resting = _findAnyResting();
+    if (resting != null) {
+      await endRest(_exec, resting.id, DateTime.now().millisecondsSinceEpoch);
     }
 
     final finishedId = current.id;
