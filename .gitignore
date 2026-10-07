@@ -1,0 +1,23 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+*.keystore
+*.jks
+
+# 环境重定向（沙箱外家目录不可写时的落地位置）
+.env/
+.tooling/
+
+# 系统
+Thumbs.db
+.DS_Store
