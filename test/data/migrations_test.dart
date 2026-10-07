@@ -109,4 +109,33 @@ void main() {
       reason: 'migrate 必须跑 v2，否则已发布的库永远拿不到 app_setting',
     );
   });
+
+  test('只跑到 v2 的旧库能升到 v3 —— session.template_id 加得上', () async {
+    // 手工造一个「只跑到 v2」的库：v1 的四张表 + v2 的 app_setting + 版本号 2。
+    // 这是 Phase 1 之前发布的库在新版上的样子。
+    await exec.run(createMetaSql);
+    await exec.run(createTablesSql);
+    await exec.run(createSettingsSql);
+    await exec.run(
+      "INSERT INTO app_meta (key, value) VALUES ('schema_version', '2')",
+    );
+    expect(await getSchemaVersion(exec), 2);
+
+    final before = await exec.all<Map<String, Object?>>('PRAGMA table_info(session)');
+    expect(
+      before.map((c) => c['name']),
+      isNot(contains('template_id')),
+      reason: '这一列此刻还不该存在，否则这条用例就没在测升级',
+    );
+
+    await migrate(exec);
+
+    expect(await getSchemaVersion(exec), schemaVersion);
+    final after = await exec.all<Map<String, Object?>>('PRAGMA table_info(session)');
+    expect(
+      after.map((c) => c['name']),
+      contains('template_id'),
+      reason: 'session_repo.createSession 直接写这一列；加不上则整场训练都建不出来',
+    );
+  });
 }

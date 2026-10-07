@@ -1718,10 +1718,25 @@ class Migration {
 const List<Migration> migrations = [
   Migration(version: 1, statements: [createMetaSql, createTablesSql]),
   Migration(version: 2, statements: [createSettingsSql]),
+  // v3：`session.template_id` —— 「这一场按哪套计划练的」。
+  //
+  // 计划初版把 v3 留到了后续 Phase，那是**错的**：Task 7 的仓储代码逐字沿用
+  // 旧项目，一直在读写这一列，`WorkoutSession.templateId` 在 Task 1 就进了域类型。
+  // 不建这一列，Task 7/8 的每条测试都在 prepare 阶段就炸（实测报
+  // `table session has no column named template_id`）。
+  //
+  // 只含 ALTER 一句，**不含**两张计划表 —— 那两张表留到 Phase 4 追加 v4。
+  // 这正是「只追加，绝不修改已发布的项」：v3 一旦发布过，再去改它，
+  // 已经升到 v3 的库就永远拿不到那两张表。
+  //
+  // ⚠️ 已知弱点：`ADD COLUMN` 在 SQLite 里没有 `IF NOT EXISTS`，不幂等，
+  // 而 migrate() 的语句之间没有事务。ALTER 成功但写版本号失败的话，
+  // 下次启动会以 `duplicate column name` 抛错。窗口只有两条语句之间。
+  Migration(version: 3, statements: ['ALTER TABLE session ADD COLUMN template_id TEXT']),
 ];
 
 /// 当前库结构版本。必须与 [migrations] 的最后一项保持一致。
-const int schemaVersion = 2;
+const int schemaVersion = 3;
 
 /// 读出当前库结构版本。
 ///
@@ -2159,8 +2174,11 @@ const List<SeedExercise> seedExercises = [
 - [ ] **Step 4: 写 `lib/data/repositories/exercise_repo.dart`**
 
 ```dart
+// Step 5 还会在顶部加一行 `import 'package:pinyin/pinyin.dart';`
+import '../../domain/types.dart';   // Exercise
 import '../db/sql_executor.dart';
-import 'seed.dart';
+import '../ids.dart';               // newId()
+import 'seed.dart';                 // seedExercises（预置动作表）
 
 /// `exercise` 表的原始行。布尔在库里是 0/1，转换见 [toExercise]。
 class ExerciseRow {
@@ -2498,7 +2516,7 @@ Expected: FAIL —— `session_repo.dart` 不存在
 ```dart
 import '../../domain/types.dart';
 import '../db/sql_executor.dart';
-import 'seed.dart';
+import '../ids.dart';
 
 class SessionRow {
   final String id;
@@ -2903,7 +2921,7 @@ Expected: FAIL —— `set_repo.dart` 不存在
 ```dart
 import '../../domain/types.dart';
 import '../db/sql_executor.dart';
-import 'seed.dart';
+import '../ids.dart';
 
 /// `set_entry` 表的原始行。
 class SetRow {
@@ -3292,12 +3310,12 @@ Expected: `All tests passed!`
 | Task 2（rest_advice） | 10 | ✅ 实测 |
 | Task 3（format 13 + session_label 5） | 18 | ✅ 实测 |
 | Task 4（layering） | 5 | 待做 |
-| Task 5（migrations） | 6 | 待做 |
+| Task 5（migrations） | 8 | ✅ 实测（含 v3 升级守卫） |
 | Task 6（exercise_repo） | 9 | ✅ 实测 |
-| Task 7（session_repo） | 10 | 待做 |
-| Task 8（set_repo） | 11 | 待做 |
+| Task 7（session_repo） | 11 | ✅ 实测（含 2 条 rowid 守卫） |
+| Task 8（set_repo） | 12 | ✅ 实测（含 1 条 rowid 守卫） |
 | Task 9（settings_repo） | 7 | 待做 |
-| **合计** | **约 94** | |
+| **合计** | **约 97** | |
 
 > **条数只是参考，不是判据。** 计划初版给的几个数字（8 / 15 / 39 / 86）有误，
 > 已按实际修正 —— 但真正的判据永远是「全绿」，不是「等于某个数」。

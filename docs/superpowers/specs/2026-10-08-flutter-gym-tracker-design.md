@@ -191,7 +191,19 @@ abstract class SqlExecutor {
 
 三行索引不可省（`idx_session_finished`、`idx_session_exercise_session`、`idx_set_entry_session_exercise`）。
 
-> Phase 1 只建 v1。v2（`app_setting`）随主题三态一起进 Phase 1（见 §6.4），v3（分化计划）留给后续 Phase。
+> **Phase 1 建到 v3**（2026-10-08 修正 —— 本节初版写的是「v3 留给后续 Phase」，与 Task 7 的代码矛盾，实施时被证伪）：
+>
+> | 版本 | 内容 | 为什么在 Phase 1 |
+> |---|---|---|
+> | v1 | 四张表 + `app_meta` | 地基 |
+> | v2 | `app_setting` | 主题三态要用（§6.5） |
+> | **v3** | `ALTER TABLE session ADD COLUMN template_id TEXT` | **Task 7 的仓储代码逐字沿用旧项目，一直在读写这一列**；`WorkoutSession.templateId` 在 Task 1 就进了域类型。不加这一列，Task 7/8 的每一条测试都在 prepare 阶段就炸 |
+>
+> **注意 v3 只含 `ALTER TABLE` 一句，不含计划的两张表**。分化计划的 `split_template` / `template_exercise` 留到 Phase 4，届时**追加 v4**（不是并进 v3）—— 这正是「只追加，绝不修改已发布的项」那条规则的应用：v3 一旦发布过，再去改它，升到 v3 的库就永远拿不到那两张表。
+>
+> 与上游设计文档 §4.4 的迁移表编号因此不同（那里 v3 把 `ALTER` 与两张表并在一起）。**是我们拆 Phase 造成的差异，不是抄错**；那边记录的是旧项目一次性做到 M6 的历史。
+>
+> ⚠️ **一处已知弱点**（实施时记录、未修）：`ALTER TABLE ... ADD COLUMN` 在 SQLite 里**没有 `IF NOT EXISTS`**，不幂等；而 `migrate()` 的语句之间没有事务。若 ALTER 成功、写版本号那步失败，下次启动会以 `duplicate column name` 抛错。窗口只有两条语句之间。Phase 4 加 v4 时若也要 `ALTER TABLE`，这个窗口会再出现一次。
 
 ### 3.3 迁移框架
 
