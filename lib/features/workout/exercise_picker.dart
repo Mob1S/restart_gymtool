@@ -95,7 +95,7 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
                                 AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.sm),
                             child: Text(entry.key, style: TextStyle(
                               fontSize: AppFontSize.label,
-                              letterSpacing: 0.8,
+                              letterSpacing: AppTracking.label,
                               color: c.textTertiary,
                             )),
                           ),

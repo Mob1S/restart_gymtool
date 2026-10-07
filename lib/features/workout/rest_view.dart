@@ -78,7 +78,7 @@ class _RestViewState extends State<RestView> {
         const SizedBox(height: AppSpacing.xs),
         Text('组间休息', style: TextStyle(
           fontSize: AppFontSize.label,
-          letterSpacing: 1.2,
+          letterSpacing: AppTracking.unit,
           color: c.textTertiary,
         )),
         const SizedBox(height: AppSpacing.xxl),

@@ -87,7 +87,7 @@ class _DragNumberState extends State<DragNumber> {
           const SizedBox(height: AppSpacing.xs),
           Text(widget.unit, style: TextStyle(
             fontSize: AppFontSize.label,
-            letterSpacing: 1.2,
+            letterSpacing: AppTracking.unit,
             color: c.textTertiary,
           )),
         ],

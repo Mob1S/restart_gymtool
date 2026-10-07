@@ -96,15 +96,22 @@ class AppFontSize {
 
 /// 字间距。
 ///
-/// 单独抽出来是因为它**踩过 DRY**：`theme.dart` 的 `labelSmall` 与
-/// `stat_block.dart` 里各写了一遍 `letterSpacing: 0.8`，两处会各自漂移，
-/// 而它们本该是同一种「分组小标题」的观感 —— 这正是「tokens 是唯一来源」
-/// 那条纪律要防的东西。
+/// 单独抽出来是因为它**踩过 DRY**：`letterSpacing: 0.8` 一度散落在
+/// `theme.dart` 的 `labelSmall`、`stat_block.dart`、`settings_page.dart`、
+/// `exercise_picker.dart` 四处，`1.2` 散落在 `drag_number.dart` 与
+/// `rest_view.dart` 两处 —— 每一组本该是同一种观感，分开写就会各自漂移。
+/// 这正是「tokens 是唯一来源」那条纪律要防的东西。
 class AppTracking {
   AppTracking._();
 
-  /// 分组小标题 / 单位标注。配 [AppFontSize.label] 使用。
+  /// 分组小标题（配 [AppFontSize.label] 使用）：动作选择弹层里的肌群标题、
+  /// 设置页的分组标题、统计块的单位标注。
   static const double label = 0.8;
+
+  /// 记录页大数字与休息钟面下方的**单位**（`kg`、「组间休息」）。
+  ///
+  /// 比 [label] 略宽：那两处的字更大、留白更多，用 0.8 会显得挤。
+  static const double unit = 1.2;
 }
 
 class AppSpacing {
