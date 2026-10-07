@@ -281,10 +281,16 @@ https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-3.6.0/sqlite3
 http=200 size=748686 time=1.82s
 ```
 
-**关键结论：这只是 `curl.exe`（Windows TLS 后端）的问题，不是网络问题。**
-**Dart 用自己的 TLS 栈，完全不受影响** —— `sqflite_common_ffi_web:setup` 从 github.com
-拉 sqlite3.wasm 是一次成功的，`flutter pub add` 从 pub.dev 拉 49 个包也正常。
-所以：**Flutter/Dart 侧不用做任何处理；只有自己写 `curl.exe` 脚本时才要加 `--ssl-no-revoke`。**
+**关键结论（已被 Task 21 修正，见 §10）：这只是 `curl.exe`（Windows TLS 后端）
+的表现**，不是网络封禁。**Dart 用自己的 TLS 栈，不受影响** ——
+`sqflite_common_ffi_web:setup` 从 github.com 拉 sqlite3.wasm 是一次成功的，
+`flutter pub add` 从 pub.dev 拉 49 个包也正常。
+
+> ⚠️ **本节的原始结论「Flutter/Dart 侧不用做任何处理」是只对了一半的。**
+> 当时只探了 Dart 与 curl 两条路，**漏了第三条：Java**。
+> Task 21 构建 APK 时被同一条根因打死（`PKIX path building failed`），
+> 详见 §10 —— 那里有完整根因与证据。**这一段保留原文，因为它记录的是
+> 「当时的判断」与「后来被什么推翻」。**
 
 ### 6-2. `sdkmanager --licenses` 不能靠 PowerShell 管道喂 `y`
 
@@ -530,3 +536,84 @@ flutter test
 > 假设不一致」的那一层 —— 旧项目这条链第一次跑就抓出一个分层测试没抓到的问题。
 > 本项目的 Task 12 也已经印证：它在实施期间暴露了「同时至多一段休息在进行」
 > 这条不变量只由界面守着（详见计划 Task 11 那节的说明）。
+
+---
+
+## 10. ⭐ **`github.com` 被本机 Steam++ 中间人劫持 —— Java/Gradle 因此完全握手不上**
+（Task 21 发现；同时是 §6-1 的真正根因）
+
+### 现象
+
+`flutter build apk --debug` **确定性失败**（重跑两次，错误逐字相同），
+`.part` 文件始终 **0 字节**：
+
+```
+Exception in thread "main" javax.net.ssl.SSLHandshakeException: (certificate_unknown)
+PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException:
+unable to find valid certification path to requested target
+	at org.gradle.wrapper.Download.downloadInternal(Download.java:58)
+	at org.gradle.wrapper.Install.createDist(Install.java:48)
+Gradle task assembleDebug failed with exit code 1
+```
+
+**关键：失败发生在 Gradle 启动之前的 wrapper 下载阶段。** 所以
+`--no-daemon`、调大超时、清缓存**全都无效** —— daemon 根本没参与。
+
+### 根因链（每一跳都实测过）
+
+1. `android/gradle/wrapper/gradle-wrapper.properties` →
+   `https://services.gradle.org/distributions/gradle-9.3.1-all.zip`
+2. `services.gradle.org` 返回 **307**，重定向到
+   **`https://github.com/gradle/gradle-distributions/releases/download/...`**
+3. Java 跟随重定向连 `github.com` → **收到一张本地签发的假证书** → PKIX 失败
+
+决定性证据 —— 用 **JDK 自己的 TLS 栈**取证书：
+
+```
+=== keytool -printcert -sslserver github.com ===
+签发者: C=CN, O=BeyondDimension, OU=Technical Department, CN=SteamTools Certificate
+
+=== 对照：keytool -printcert -sslserver services.gradle.org ===
+签发者: CN=WE1, O=Google Trust Services, C=US      ← 这一跳是好的
+```
+
+**`github.com` 被 Steam++ / Watt Toolkit（BeyondDimension 出品）中间人劫持**，
+用自签的 `SteamTools Certificate` 冒充 GitHub。进程实测在跑，且**监听在 0.0.0.0:443**。
+
+### 为什么只有一部分工具受影响
+
+| 工具 | 是否受影响 | 原因 |
+|---|---|---|
+| Chrome / curl.exe（schannel） | 部分 | 该 CA **装进了 Windows 证书库**，它们信；但查不到吊销信息，所以 curl 需要 `--ssl-no-revoke`（**这就是 §6-1 的真正原因**） |
+| Dart / pub | **不受影响** | 自己带 TLS 栈与根证书，且实际走的是未被动持的 CDN |
+| **Java（Gradle wrapper）** | **完全打死** | 该 CA **没有装进 JDK 的 `cacerts`** → 根本不认识它 |
+
+### 与旧文档 §9「网络下载量上限」的关系
+
+**那条假说在这台机器上不成立，而且完全不是本次失败的原因。** 直接测带宽：
+
+```
+curl.exe -L --ssl-no-revoke -r 0-8388607 .../gradle-9.3.1-all.zip
+http=206 downloaded=8388608 speed=3504427B/s time=2.393717s     ← 3.5 MB/s
+完整文件 Content-Length: 234893460（224 MB），HTTP 200
+```
+
+**下载又快又通，Java 只是连证书都握不上手。** 与「能下 1MB 下不动 2GB」是两回事。
+
+### 解法
+
+**退出 Steam++ 的「网络加速」（或整个 Steam++）后重跑。** 劫持停止后
+`github.com` 恢复真实证书（实测变成 `CN=Sectigo Public Server Authentication CA DV E36`），
+构建即可进行。
+
+**只要成功一次，Gradle 分发包就缓存进 `.tooling/gradle`，后续重建不再需要 github**
+（Maven 依赖走 `dl.google.com` 与 `repo.maven.apache.org`，实测未被劫持）。
+
+**这条对后续所有 Task 都成立** —— 任何需要 Java/Gradle 联网的步骤
+（重建 APK、`flutter run` 到 Android）**都要先确认加速器不在拦**。
+排查方法就一句：`keytool -printcert -sslserver github.com` 看签发者是不是
+`Sectigo` / `DigiCert` 之类的真 CA，而不是 `SteamTools Certificate`。
+
+> **没有采纳的两条路，以及为什么不采纳**（都涉及安全，需用户单独批准）：
+> 把 SteamTools CA 导入 JDK `cacerts`（等于让构建链永久信任一个本地中间人根证书）；
+> 关闭 TLS 校验（不可接受）。
