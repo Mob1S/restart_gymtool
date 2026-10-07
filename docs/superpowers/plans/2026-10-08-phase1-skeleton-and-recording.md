@@ -7086,7 +7086,43 @@ Dart 3.6 时代的续行缩进，而本机 Dart 3.13 的 formatter 是新 tall s
 **处置**：Phase 2 开工前，单独一个提交统一跑一次 `dart format`。
 **不要拖** —— 越晚做，卷入的文件越多。
 
-### 二、界面层要不要补 widget 测试（一条**被重新审视**的旧决定）
+### 二、界面层的 widget 测试（一条**已被推翻并已落地**的旧决定）
+
+> ✅ **2026-10-08 已实施：`test/widget/smoke_test.dart`，6 条，全绿。**
+> 下面是决策过程与**实测出来的成本**，供后续 Phase 参考。
+>
+> **实测成本（原以为是两处拦路虎，结果一真一假）：**
+>
+> | 顾虑 | 实测 |
+> |---|---|
+> | 「`flutter_test` 的假异步时钟与 sqlite ffi 的真 I/O 会冲突」 | **不成立** —— 把建库包进 `tester.runAsync` 即可，**不需要 mock 数据库** |
+> | 「`RecordPage` 用了 `WakelockPlus`，必须 mock，成本不低」 | **成立** —— 见下 |
+>
+> **两条实测踩出来的坑（都写进了测试文件的注释）：**
+>
+> 1. **「火并忘记」的异步调用会骗过你。** `WakelockPlus.enable()` 在 `initState`
+>    里不 await，它的 `PlatformException` 是**异步抛**的。第一版测试只等了一轮
+>    微任务，异常还没浮上来 —— **测试通过了，但是通过得有问题的**。
+>    把等待改扎实（`settleReal`：交替 `runAsync(5ms)` 与 `pump()`）之后才暴露。
+>    **凡是 `initState` 里不 await 的调用，都要怀疑它是不是还没跑完。**
+> 2. **`pumpAndSettle` 推的是假时钟，推不动真实 I/O** —— 表现是
+>    `pumpAndSettle timed out`。要等数据库就得用上面那个 `settleReal`。
+> 3. **漏一个 provider 的表现是「什么都没渲染」而不是报错** —— 第一版辅助函数
+>    只给了 `ActiveSessionController` 没给 `SqlExecutor`，总结页卡在加载态，
+>    看起来像「异步没等到」。**这种误判很费时间**，所以两个 provider 都要给。
+>
+> **`WakelockPlus` 的解法**（成本：一个 dev 依赖 + 十来行）：
+> 加 `dev_dependencies: wakelock_plus_platform_interface`，然后直接替换主包的
+> 顶层变量 `wakelockPlusPlatformInstance = _FakeWakelock()`。
+> **不要去 mock pigeon 的 `BasicMessageChannel`** —— 那需要自造 codec，麻烦得多。
+>
+> **已做变异验证**（证明它不是空转的）：把口径字样改成规格明令禁止的「个人最好」
+> → 测试变红；把「组数不足 3 组，暂不判断」改掉 → 测试变红。
+
+<details>
+<summary>当初的决策过程（保留原文）</summary>
+
+### 界面层要不要补 widget 测试（一条**被重新审视**的旧决定）
 
 本计划 §「里程碑 D」的引言写着「界面层不写单元测试」，理由是旧项目的一条纪律：
 **「纯逻辑留在带 JSX 的文件里等于永远测不到」**。
@@ -7107,6 +7143,8 @@ Flutter 的 `flutter_test` 自带 `WidgetTester`，widget 测试是白送的。
 **Phase 2 要正面回答这个问题。** 需要考虑的具体点：`WakelockPlus` /
 `HapticFeedback` 的 mock 方式；测试用 `FfiExecutor` 内存库注入 controller 的可行性；
 以及最该覆盖的是哪几屏（候选：总结页的口径文案、记录的四个分支、空态）。
+
+</details>
 
 ---
 
