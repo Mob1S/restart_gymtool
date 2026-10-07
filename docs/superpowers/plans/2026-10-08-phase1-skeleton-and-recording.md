@@ -5530,7 +5530,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
     if (_active != null) {
       final choice = await showConflictDialog(
         context,
-        description: _describe(c, _active!),
+        description: _describe(c),
       );
       if (!mounted) return;
 
@@ -5556,11 +5556,16 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
 
   /// 「深蹲 等 3 个动作 · 已记 12 组」。
   ///
-  /// 主页按钮和冲突弹窗**共用同一个函数** —— 抽出来不是为了省几行代码，
-  /// 而是为了让「这说的是哪一场」只有一个答案。两处各写一遍、改一处忘一处时，
-  /// 用户会看到两句互相矛盾的话，而这个按钮存在的全部意义就是让他确认
-  /// 「是不是我刚才那场」。
-  String _describe(ActiveSessionController c, WorkoutSession s) =>
+  /// 主页那张「继续…的训练」卡片与冲突弹窗**共用它** —— 抽出来不是为了省几行
+  /// 代码，而是为了让「这说的是哪一场」在**这个页面里**只有一个答案。
+  ///
+  /// 真正的「唯一来源」是 `domain/session_label.dart` 的 `describeExercises`
+  /// —— 它保证的是**跨页面**一致（总结页、历史详情页都会用它）。
+  ///
+  /// （计划初版写的是 `_describe(ActiveSessionController c, WorkoutSession s)`，
+  /// 但 `s` 从未被用过，且 `build()` 当时是**内联**调用而没走这个函数 ——
+  /// 于是注释里「共用同一个函数」那句在代码里并不成立。已改成名副其实。）
+  String _describe(ActiveSessionController c) =>
       describeExercises(c.exercises.map((e) => e.progress).toList());
 
   @override
@@ -5595,7 +5600,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
                       )),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    describeExercises(c.exercises.map((e) => e.progress).toList()),
+                    _describe(c),
                     style: TextStyle(
                         fontSize: AppFontSize.caption, color: sc.textSecondary),
                   ),
@@ -5642,7 +5647,7 @@ git commit -m "feat(workout): 训练首页与冲突三按钮对话"
 
 **Interfaces:**
 - Consumes: `ActiveSessionController`、`formatClock`、`AppFontSize`
-- Produces: `RecordPage({required String sessionId})`、`DragNumber`、`Stepper`
+- Produces: `RecordPage({required String sessionId})`、`DragNumber`、`NumberStepper`
 
 - [ ] **Step 1: 写 `DragNumber` —— 大数字拖动**
 
@@ -5746,7 +5751,14 @@ class _DragNumberState extends State<DragNumber> {
 }
 ```
 
-- [ ] **Step 2: 写 `Stepper` —— 精调**
+- [ ] **Step 2: 写 `NumberStepper` —— 精调**
+
+> **类名带 `Number` 前缀是有意的** —— Flutter Material 自带一个 `Stepper`
+> （多步表单向导，语义完全不同）。重名时 `flutter analyze` **抓不到**它
+> （只有同一个文件里同时 import 两者才报错），但消费方一定会撞上：
+> `Error: 'Stepper' is imported from both ...`。
+> 靠 `hide Stepper` 绕开会在每个消费方各留一处雷，**改名一次解决**。
+> （计划初版就叫 `Stepper`，实施 Task 17 时发现，已改。）
 
 ```dart
 import 'package:flutter/material.dart';
@@ -5758,14 +5770,14 @@ import '../../ui/tokens.dart';
 ///
 /// 视觉上是**次级**的（比大数字小得多）—— 它服务的是「22.5 想变 25」
 /// 这种微调，不是主要操作路径。
-class Stepper extends StatelessWidget {
+class NumberStepper extends StatelessWidget {
   final double value;
   final double step;
   final double min;
   final double max;
   final ValueChanged<double> onChanged;
 
-  const Stepper({
+  const NumberStepper({
     super.key,
     required this.value,
     required this.onChanged,
@@ -5969,7 +5981,7 @@ class _BreathingDotState extends State<BreathingDot>
 
 - [ ] **Step 5: 在 Chrome 里目视确认**
 
-**这一步现在只能确认编译通过** —— `DragNumber` / `Stepper` / `RestView` 要到
+**这一步现在只能确认编译通过** —— `DragNumber` / `NumberStepper` / `RestView` 要到
 Task 18 组装进记录页才看得到。跑 `flutter analyze` 确认无错误即可。
 
 - [ ] **Step 6: 提交**
@@ -5990,7 +6002,7 @@ git commit -m "feat(workout): 数值控件与休息界面 —— 拖动大跨度
 - Test: 无（界面层，见里程碑 D 开头的说明）
 
 **Interfaces:**
-- Consumes: `listExercises`、`ActiveSessionController`、Task 17 的 `DragNumber` / `Stepper` / `RestView`
+- Consumes: `listExercises`、`ActiveSessionController`、Task 17 的 `DragNumber` / `NumberStepper` / `RestView`
 - Produces: `ExerciseStrip`、`Future<Exercise?> showExercisePicker(BuildContext)`、`RecordPage({required String sessionId})`
 
 > **`firstOrNull` 需要 `package:collection`**（Dart 的 `Iterable` 没有内置它）。
@@ -6430,7 +6442,7 @@ class _RecordPageState extends State<RecordPage> {
         ),
 
         const SizedBox(height: AppSpacing.xl),
-        Stepper(
+        NumberStepper(
           value: weight,
           onChanged: (v) => setState(() => _weight = v),
         ),
@@ -6477,7 +6489,7 @@ class _RecordPageState extends State<RecordPage> {
       children: [
         Text('次数', style: TextStyle(fontSize: AppFontSize.label, color: sc.textTertiary)),
         const SizedBox(width: AppSpacing.md),
-        Stepper(
+        NumberStepper(
           value: reps.toDouble(),
           step: 1,
           max: 100,
