@@ -394,6 +394,64 @@ Waiting for connection from debug service on Chrome...             14.7s
 
 ---
 
+### 6-7. ⭐ **`sqflite` 的 `execute` 在 Android 上只跑第一条语句、其余静默丢弃**（Task 5 发现）
+
+**这是本项目至今发现的最危险的一条平台差异 —— 它会让 App 在真机上缺表，而全部测试都是绿的。**
+
+#### 现象
+
+`SqlExecutor.run` 的契约要求「不传参数时能跑多语句」（迁移的建表脚本是 7 条 CREATE 拼成的）。
+若直接 `db.execute(createTablesSql)`：
+
+| 后端 | 结果 |
+|---|---|
+| **FFI（测试 / 桌面）** | ✅ 7 条全部执行。底层走 `sqlite3` 包的 `sqlite3_exec`，支持多语句 |
+| **Android（生产）** | ❌ **只执行第一条 `CREATE TABLE exercise`，其余 3 张表 + 3 个索引无声消失** |
+
+#### 证据（不是推测）
+
+1. **接口契约原文**，`sqflite_common-2.5.13+1/lib/sqlite_api.dart:85-89`，`DatabaseExecutor.execute` 的文档：
+   > Executes a single SQL statement... You cannot have multiple statements (separated by `;` or by line), as this is not supported. i.e. you cannot create 2 tables for example.
+
+2. **Android 实现路径**：`SqflitePlugin.onExecuteCall` → `Database.execute` → `getWritableDatabase().execSQL(...)`（`sqflite_android-2.4.4/.../Database.java:426`）。Android 的 `execSQL` 底层是 `sqlite3_prepare_v2`，**只编译第一条，其余静默丢弃且不报错**。
+
+3. **探针实测（FFI 侧）**：两条 CREATE 一次 `execute`，两条都建出来了 —— 印证了「FFI 支持、所以测试抓不到」。
+
+#### 后果
+
+**全部测试都跑在 FFI 上，因此这个差异永远测不出来。** 若不兜底，Android 上库只有一张表，直到运行时访问 `session` 才炸 `no such table` —— 而且是在真机验收、甚至真实使用时。
+
+#### 处置
+
+实现了共享函数 `splitSqlStatements`（在 `lib/data/db/sql_executor.dart`），
+**两个后端都经它逐条执行**：
+
+```dart
+List<String> splitSqlStatements(String sql) => sql
+    .split(';')
+    .map((statement) => statement.trim())
+    .where((statement) => statement.isNotEmpty)
+    .toList();
+```
+
+两个设计取舍：
+
+- **共享而非各写一份**：要求「两个分支在三个后端里行为必须一致」，共享一份是构造性保证；更实际的好处是**测试跑的就是 Android 用的那条代码路径**。
+- **FFI 也拆**：FFI 本可把多语句直接交给底层，但那样 Android 的拆分路径就**没有任何测试覆盖**，两端行为也会各自漂移。
+
+**已知边界**：朴素按 `;` 切分，不处理字符串字面量里的分号（`DEFAULT ';'`、触发器 `BEGIN...END;`）。
+本项目 DDL 与迁移脚本不含这类写法。**将来若需要，只需改这一个函数。**
+
+#### ⚠️ 一条必须如实说明的局限
+
+**这个兜底的「必要性」无法由本机测试证明** —— 在 FFI 上改不改测试都绿（FFI 本来就支持多语句）。
+依据是 `sqflite_android` 源码 + Android 平台文档，**没有上真机验证**。
+
+**坐实它只能靠 Task 22 真机验收**：在真机上清空 App 数据后重开，确认 4 张表 + 52 个动作全部建出
+（这条本来就在 M2 验收清单的「数据落地检查」里）。
+
+---
+
 ## 7. `flutter run -d chrome` 结果：**成功**（第二次尝试）
 
 ```
