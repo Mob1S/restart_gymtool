@@ -3,7 +3,7 @@
 - **日期**：2026-10-08
 - **状态**：待实施
 - **项目目录**：`C:\ccproject\restart_gymtool`
-- **上游规格**：[`2026-10-08-gym-tracker-design.md`](../../../2026-10-08-gym-tracker-design.md)（旧项目总纲，React Native 版）
+- **上游规格**：[`2026-10-08-gym-tracker-design.md`](./2026-10-08-gym-tracker-design.md)（旧项目总纲，React Native 版；2026-10-08 由项目根目录移入本目录，内容未改）
 - **旧项目**：`C:\ccproject\gym`（Expo / React Native，93 个 TS/TSX 文件、18,578 行、已达 M8）
 - **本文的定位**：这是**换栈重写**的第一份 spec。它同时承担两件事 —— 一份跨全部 Phase 的**架构总纲**，以及 **Phase 1 的详细范围**。后续 Phase 各写各的 spec。
 

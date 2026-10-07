@@ -192,10 +192,18 @@ flutter doctor -v
 ```powershell
 flutter create --org com.mobis --project-name gym_tracker --platforms android,web .
 flutter pub add sqflite sqflite_common_ffi sqflite_common_ffi_web go_router provider uuid wakelock_plus
-flutter pub add dev:sqflite_common_ffi
 ```
 
 > **不要手写版本号** —— 用 `flutter pub add` 让 pub 解析当前兼容版本，写死版本号会踩到解析冲突。
+>
+> ⚠️ **不要加 `flutter pub add dev:sqflite_common_ffi`（本计划初版有这一行，已删除）。**
+> 它**必然失败**（实测退出码 65）：
+> ```
+> "sqflite_common_ffi" is already in "dependencies". Use "pub remove sqflite_common_ffi"
+> to remove it before adding it to "dev_dependencies"
+> ```
+> 而且**不应该**用 `pub remove` 去"补救"：Task 5 的 `lib/data/db/ffi_executor.dart` 位于
+> `lib/` 下，**这是运行时依赖，本来就必须留在 `dependencies`**。
 
 - [ ] **Step 7: 生成 Chrome 预览所需的 sqlite3.wasm**
 
@@ -269,6 +277,36 @@ git commit -m "chore: Flutter 工程骨架与三后端依赖，环境验证通�
 - [ ] **Step 12: 把环境结论写进笔记**
 
 创建 `docs/superpowers/plans/dev-environment-notes.md`，记录：实际用的版本号、`flutter doctor` 的原文输出、三条已知风险是否仍然成立、以及任何偏离本计划的地方。**这份笔记是后续所有 Task 的排障依据。**
+
+---
+
+#### Task 0 实施结果（2026-10-08，已由主 agent 独立复验）
+
+**闸门通过，无一步失败。** 实测版本：Flutter **3.47.6** / Dart **3.13.5** / Temurin JDK **17.0.20.1** / Android SDK **36**（build-tools 36.0.0）。
+
+| 计划里的已知风险 | 实测结论 |
+|---|---|
+| 子进程 stdio 被禁 → 需 `--concurrency=1` | **不成立**，默认并发即可 |
+| 沙箱外家目录不可写 | **不成立**，家目录读写正常 |
+| 网络下载量上限 | **不成立**，单会话拉约 3.5 GB 无拦截 |
+
+**但这三条不成立不代表环境没坑 —— 实测暴露了两条计划没预见的：**
+
+1. **`curl.exe` 的 schannel 吊销检查失败**（最坑）。对 `api.adoptium.net`（JDK）与 `github.com`（sqlite3.wasm）报
+   `CRYPT_E_NO_REVOCATION_CHECK (0x80092012) - 吊销功能无法检查证书是否吊销`。
+   **解法：加 `--ssl-no-revoke`。**
+   关键结论：**这只是 curl.exe（Windows TLS 后端）的问题，不是网络封禁** —— Dart 用自己的 TLS 栈完全不受影响，`flutter pub add` 与 `sqflite_common_ffi_web:setup` 都一次成功。只有自己写 curl 脚本时才需要处理。
+2. **VS Code 的 Dart 扩展绕过了 `PUB_CACHE` 重定向**，把 209 个包写进了**真实家目录**的 `AppData\Local\Pub\Cache`。目前无害（两个缓存都完整），但谁要严格保证"一切都在工程内"，得关掉该扩展或在 VS Code 设置里也注入 `PUB_CACHE`。
+
+**两条重跑即可的偶发**（不要误判为环境损坏）：
+
+- `dart pub global activate webdev` 首次卡 17 分钟后超时 —— pub 的 version solving 要拉约 200 个包元数据，**以分钟计**，任一连接超时即整次失败。原样重跑即成功；**超过 10 分钟不要判失败，先看 `PUB_CACHE` 有没有在长**。
+- `flutter run -d chrome` 首次永久卡在 `Waiting for connection from debug service` —— 判定为首次 web 编译耗时导致的竞态，**重跑即好**。
+
+**另有两处对计划本身的偏离**（细节见 `dev-environment-notes.md`）：
+
+- 用 `tar.exe` 代替 `Expand-Archive`（Flutter 解压后约 3 万文件，PS 5.1 的 `Expand-Archive` 慢到不可用）
+- Android platform 装 **36** 而不只是计划写的 35（Flutter 3.47.6 要求 36）
 
 ---
 
