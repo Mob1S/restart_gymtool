@@ -6919,6 +6919,41 @@ git commit -m "chore: Phase 1 静态检查与全量测试通过"
 
 ### Task 22: 真机验收
 
+> # 🔴 状态：**未做**（2026-10-08）
+>
+> **`adb devices` 是空的 —— 没有连接任何设备。** 因此下面 4 条成功标准
+> 加数据落地检查，**一项都没有在真机上跑过**。
+>
+> 这与旧项目 §10.2 记的情形**完全一样**：那一轮的 12 项真机验收也是因为
+> 收尾机器 `adb devices` 为空而全部未做，然后作为欠账留了很久。
+> **本文不再让它悄悄躺着** —— 下面每一项都明确标着未做，
+> **不要读成「通过」，也不要读成「待补」而不动手。**
+>
+> ## 已经做完的准备工作（插上手机即可开始）
+>
+> | 项 | 状态 |
+> |---|---|
+> | `app-debug.apk` | ✅ 已产出：`build/app/outputs/flutter-apk/app-debug.apk`，**174,188,848 字节**（166.12 MB） |
+> | adb 与 Android SDK | ✅ 已装（adb 1.0.41 / platform-tools 37.0.1），`scripts/env.ps1` 会设好路径 |
+> | Chrome 里的全流程 | ✅ 已跑通并逐屏截图（见 Task 18/19/20 的报告）—— **但它不是验收** |
+> | 分层测试 + 端到端回归 | ✅ 134 条全绿 |
+> | **真机上的任何一项** | ❌ **全部未做** |
+>
+> ## 插上手机后怎么开始
+>
+> ```powershell
+> . C:\ccproject\restart_gymtool\scripts\env.ps1
+> adb devices -l                                   # 必须看到设备（手机需开 USB 调试并点允许）
+> adb shell svc power stayon usb                   # ⚠️ 不可省，理由见下方
+> adb install -r build\app\outputs\flutter-apk\app-debug.apk
+> adb shell am start -n com.mobis.gym_tracker/.MainActivity
+> ```
+>
+> ⚠️ **构建 APK 或重装之前，先确认 Steam++ 的加速没在拦** ——
+> 见 `dev-environment-notes.md` §10。排查就一句：
+> `keytool -printcert -sslserver github.com`，签发者应是真 CA
+> 而不是 `SteamTools Certificate`。
+
 > **这一节必须如实记录结果。** 旧项目最后一轮的 12 项真机验收**全部未做**
 > （收尾机器 `adb devices` 为空），文档里如实写成「未做」而不是「通过」。
 > **静态自查不等于验收。**
@@ -7014,15 +7049,64 @@ git commit -m "docs: Phase 1 真机验收结果（如实记录，未做的项明
 
 ## 完成定义（Definition of Done）
 
-Phase 1 完成的条件，**缺一不可**：
+Phase 1 完成的条件，**缺一不可**。逐条如实标注当前状态（2026-10-08）：
 
-1. `flutter analyze` 无问题
-2. `flutter test` 全绿，断言数不少于 120 条
-3. `test/layering_test.dart` 的 5 条规则全绿，**且有人为破坏验证过它真的会红**
-4. Chrome 预览能走通「开训练 → 加动作 → 完成 3 组 → 结束 → 看总结」全流程
-5. `flutter build apk --debug` 成功产出 APK
-6. **Task 22 的 4 条成功标准 + 数据落地检查在真机上逐条跑过，结果如实记录**
-7. `docs/superpowers/plans/dev-environment-notes.md` 记录了实际环境、三条已知风险的实际结论、以及所有偏离本计划的地方
+| # | 条件 | 状态 |
+|---|---|---|
+| 1 | `flutter analyze` 无问题 | ✅ **达成** —— `No issues found!` |
+| 2 | `flutter test` 全绿，断言数不少于 120 条 | ✅ **达成** —— **134 条**全绿 |
+| 3 | `test/layering_test.dart` 全绿，**且有人为破坏验证过它真的会红** | ✅ **达成** —— 8 条全绿；规则 3 用「临时给 domain 加一行 Flutter import」验过会红；规则 1/4 用探针文件验过；**规则 2 的判据另做了变异验证** |
+| 4 | Chrome 预览能走通「开训练 → 加动作 → 完成 3 组 → 结束 → 看总结」全流程 | ✅ **达成** —— 逐屏截图核对过，含手工核算总结页数字 |
+| 5 | `flutter build apk --debug` 成功产出 APK | ✅ **达成** —— 174,188,848 字节（曾被本机证书劫持阻断，见环境笔记 §10） |
+| 6 | **Task 22 的 4 条成功标准 + 数据落地检查在真机上逐条跑过，结果如实记录** | 🔴 **未达成** —— `adb devices` 为空，**一项都没跑** |
+| 7 | `dev-environment-notes.md` 记录了实际环境、三条已知风险的实际结论、以及所有偏离本计划的地方 | ✅ **达成** —— 含 §10 那条 Steam++ 证书劫持的完整根因 |
+
+> **Phase 1 因此尚未完成：第 6 条未达成。**
+>
+> **5 / 6 达成不等于达成。** 前 5 条是静态自查与桌面验证，
+> 而第 6 条是**唯一能照到渲染、手势、真机原生行为的那一层** ——
+> 旧文档 §7.1 写得很直白：「界面缺陷只有真机用一次才会暴露」，
+> 而旧项目为此付出的代价是「换不了动作」这个功能性缺口在 79 条断言里一条都没照到。
+>
+> **插上手机、跑完 Task 22 那 6 项之前，不要说 Phase 1 完成了。**
+
+---
+
+## Phase 2 开工前要处理的两件事
+
+这两条都是 Phase 1 实施过程中发现、但**不属于 Phase 1 范围**的，
+记在这里以免丢失。
+
+### 一、`dart format` 的全项目风格分歧
+
+`dart format` 报 52 个文件里 **24 个**不符合格式，原因是计划里的代码用的是
+Dart 3.6 时代的续行缩进，而本机 Dart 3.13 的 formatter 是新 tall style。
+`flutter analyze` 不管这个，不影响验收。
+
+**处置**：Phase 2 开工前，单独一个提交统一跑一次 `dart format`。
+**不要拖** —— 越晚做，卷入的文件越多。
+
+### 二、界面层要不要补 widget 测试（一条**被重新审视**的旧决定）
+
+本计划 §「里程碑 D」的引言写着「界面层不写单元测试」，理由是旧项目的一条纪律：
+**「纯逻辑留在带 JSX 的文件里等于永远测不到」**。
+
+**但那条纪律的根因是 jest 的 babel 没配 JSX 预设 —— 是工具限制，不是设计原则。**
+Flutter 的 `flutter_test` 自带 `WidgetTester`，widget 测试是白送的。
+
+按本项目的原则 —— **「为绕开平台限制而做的妥协，换栈后要重新审视」** ——
+这条该重新审视。**Phase 1 没有做这个改动**，理由有三：
+
+1. Task 22（真机验收）才是界面层的验收闸门，而它还没跑；现在加一层测试
+   不会改变 Phase 1 的验收结果
+2. `RecordPage` 用了 `WakelockPlus`（平台通道），widget 测试需要 mock，
+   成本不低
+3. Phase 1 的界面已经在 Chrome 里逐屏截图核对过（含数字手工核算），
+   当前没有暴露出来的缺口
+
+**Phase 2 要正面回答这个问题。** 需要考虑的具体点：`WakelockPlus` /
+`HapticFeedback` 的 mock 方式；测试用 `FfiExecutor` 内存库注入 controller 的可行性；
+以及最该覆盖的是哪几屏（候选：总结页的口径文案、记录的四个分支、空态）。
 
 ---
 
