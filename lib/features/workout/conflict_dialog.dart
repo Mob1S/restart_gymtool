@@ -31,7 +31,8 @@ Future<ConflictChoice?> showConflictDialog(
           child: const Text('取消'),
         ),
         TextButton(
-          onPressed: () => Navigator.pop(context, ConflictChoice.endAndStartNew),
+          onPressed: () =>
+              Navigator.pop(context, ConflictChoice.endAndStartNew),
           child: const Text('结束它，开始新的'),
         ),
         FilledButton(

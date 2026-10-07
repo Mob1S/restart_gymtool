@@ -73,8 +73,10 @@ void main() {
       }
     }
 
-    final squatSets =
-        (await listSets(exec, seId)).where((s) => s.isCompleted).toList();
+    final squatSets = (await listSets(
+      exec,
+      seId,
+    )).where((s) => s.isCompleted).toList();
     expect(squatSets, hasLength(3));
     expect(squatSets.every((s) => s.weight == 40 && s.reps == 8), isTrue);
     // 前两组有休息数据，最后一组没有（它后面没有休息）
@@ -100,13 +102,17 @@ void main() {
 
     // `SetEntry` 与 `SetLike` 是两个独立的类（`SetLike` 是算容量负荷所需的
     // 最小形状，见 domain/types.dart），这里显式折算一次再交给 metrics。
-    final volume = totalVolumeLoad(squatSets
-        .map((s) => SetLike(
+    final volume = totalVolumeLoad(
+      squatSets
+          .map(
+            (s) => SetLike(
               weight: s.weight,
               reps: s.reps,
               isCompleted: s.isCompleted,
-            ))
-        .toList());
+            ),
+          )
+          .toList(),
+    );
     expect(volume, 40 * 8 * 3); // 960
 
     final feedback = buildRestFeedback(
@@ -172,7 +178,9 @@ void main() {
     // ⭐ 那一场必须已装进 controller，否则「接着练」进到一屏空白
     expect(c2.exercises, hasLength(1));
 
-    final rows = await exec.all("SELECT id FROM session WHERE finished_at IS NULL");
+    final rows = await exec.all(
+      "SELECT id FROM session WHERE finished_at IS NULL",
+    );
     expect(rows, hasLength(1));
   });
 
@@ -186,8 +194,9 @@ void main() {
     await c1.completeCurrentSet(40, 5);
 
     // 把休息开始时间推到 8 小时前 —— 显然是忘了按「开始下一组」
-    await exec.run('UPDATE set_entry SET rest_started_at = ?',
-        [DateTime.now().millisecondsSinceEpoch - 8 * 3600 * 1000]);
+    await exec.run('UPDATE set_entry SET rest_started_at = ?', [
+      DateTime.now().millisecondsSinceEpoch - 8 * 3600 * 1000,
+    ]);
 
     final c2 = ActiveSessionController(exec);
     await c2.resume();

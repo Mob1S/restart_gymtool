@@ -8,7 +8,9 @@ void main() {
 
   test('内存库能建表、能写、能读回', () async {
     final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
-    await db.execute('CREATE TABLE t (id TEXT PRIMARY KEY, n INTEGER NOT NULL)');
+    await db.execute(
+      'CREATE TABLE t (id TEXT PRIMARY KEY, n INTEGER NOT NULL)',
+    );
     await db.insert('t', {'id': 'a', 'n': 42});
     final rows = await db.query('t');
     expect(rows, hasLength(1));

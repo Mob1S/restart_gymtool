@@ -45,7 +45,10 @@ const List<Migration> migrations = [
   // 之间没有事务 —— 若 ALTER 成功、紧接着写版本号那一步失败，下次启动会以
   // `duplicate column name: template_id` 抛错。窗口只有两条语句之间，极小；
   // 选择**接受并记录**，而不是为它改 [migrate] 的事务语义（那会动到 v1/v2 的路径）。
-  Migration(version: 3, statements: ['ALTER TABLE session ADD COLUMN template_id TEXT']),
+  Migration(
+    version: 3,
+    statements: ['ALTER TABLE session ADD COLUMN template_id TEXT'],
+  ),
 ];
 
 /// 当前库结构版本。必须与 [migrations] 的最后一项保持一致。

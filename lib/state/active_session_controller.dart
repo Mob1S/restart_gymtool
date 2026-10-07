@@ -38,16 +38,16 @@ class ActiveExercise {
   });
 
   ActiveExercise copyWith({List<SetEntry>? sets}) => ActiveExercise(
-        sessionExercise: sessionExercise,
-        exerciseName: exerciseName,
-        sets: sets ?? this.sets,
-      );
+    sessionExercise: sessionExercise,
+    exerciseName: exerciseName,
+    sets: sets ?? this.sets,
+  );
 
   /// 给 `domain/session_label.dart` 用 —— 它只认动作名与每组的完成状态。
   ExerciseProgress get progress => ExerciseProgress(
-        exerciseName: exerciseName,
-        sets: sets.map((s) => SetProgress(isCompleted: s.isCompleted)).toList(),
-      );
+    exerciseName: exerciseName,
+    sets: sets.map((s) => SetProgress(isCompleted: s.isCompleted)).toList(),
+  );
 }
 
 /// 当前训练的全部状态与操作。
@@ -176,7 +176,8 @@ class ActiveSessionController extends ChangeNotifier {
     await addSet(_exec, active.sessionExercise.id, weight, reps);
 
     final updated = await listSets(_exec, active.sessionExercise.id);
-    exercises = List.of(exercises)..[currentIndex] = active.copyWith(sets: updated);
+    exercises = List.of(exercises)
+      ..[currentIndex] = active.copyWith(sets: updated);
     notifyListeners();
   }
 
@@ -198,7 +199,8 @@ class ActiveSessionController extends ChangeNotifier {
     }
 
     final updated = await listSets(_exec, active.sessionExercise.id);
-    exercises = List.of(exercises)..[currentIndex] = active.copyWith(sets: updated);
+    exercises = List.of(exercises)
+      ..[currentIndex] = active.copyWith(sets: updated);
     notifyListeners();
   }
 
@@ -261,7 +263,10 @@ class ActiveSessionController extends ChangeNotifier {
 
     final finishedId = current.id;
     await finishSession(
-        _exec, finishedId, DateTime.now().millisecondsSinceEpoch);
+      _exec,
+      finishedId,
+      DateTime.now().millisecondsSinceEpoch,
+    );
 
     reset();
     return finishedId;
@@ -303,11 +308,13 @@ class ActiveSessionController extends ChangeNotifier {
         sets = await listSets(_exec, se.id);
       }
 
-      result.add(ActiveExercise(
-        sessionExercise: se,
-        exerciseName: exercise?.name ?? '未知动作',
-        sets: sets,
-      ));
+      result.add(
+        ActiveExercise(
+          sessionExercise: se,
+          exerciseName: exercise?.name ?? '未知动作',
+          sets: sets,
+        ),
+      );
     }
     return result;
   }
@@ -329,9 +336,14 @@ class ActiveSessionController extends ChangeNotifier {
     String sessionId,
     List<ActiveExercise> loaded,
   ) async {
-    final lastActiveId = await findLastActiveSessionExerciseId(_exec, sessionId);
+    final lastActiveId = await findLastActiveSessionExerciseId(
+      _exec,
+      sessionId,
+    );
     if (lastActiveId == null) return 0;
-    final index = loaded.indexWhere((e) => e.sessionExercise.id == lastActiveId);
+    final index = loaded.indexWhere(
+      (e) => e.sessionExercise.id == lastActiveId,
+    );
     return index < 0 ? 0 : index;
   }
 

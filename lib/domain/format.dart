@@ -1,5 +1,14 @@
 /// 下标即 `DateTime.weekday` 的返回值：1 = 周一 …… 7 = 周日。
-const List<String> _weekdayLabels = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const List<String> _weekdayLabels = [
+  '',
+  '周一',
+  '周二',
+  '周三',
+  '周四',
+  '周五',
+  '周六',
+  '周日',
+];
 
 /// `9月16日 周三`。
 ///

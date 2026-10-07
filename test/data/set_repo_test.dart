@@ -174,8 +174,11 @@ void main() {
           ORDER BY rowid ASC''',
     );
     expect(candidates, hasLength(2));
-    expect(candidates[0]['started_at'], candidates[1]['started_at'],
-        reason: '两场必须真的并列，否则这条用例在空转');
+    expect(
+      candidates[0]['started_at'],
+      candidates[1]['started_at'],
+      reason: '两场必须真的并列，否则这条用例在空转',
+    );
 
     // 这一场（进行中）
     final s3 = await createSession(exec, name: null, templateId: null);

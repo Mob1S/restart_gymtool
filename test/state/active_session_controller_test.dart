@@ -16,8 +16,16 @@ void main() {
   setUp(() async {
     exec = await FfiExecutor.openInMemory();
     await migrate(exec);
-    squatId = (await createCustomExercise(exec, name: '深蹲', muscleGroup: '腿')).id;
-    benchId = (await createCustomExercise(exec, name: '卧推', muscleGroup: '胸')).id;
+    squatId = (await createCustomExercise(
+      exec,
+      name: '深蹲',
+      muscleGroup: '腿',
+    )).id;
+    benchId = (await createCustomExercise(
+      exec,
+      name: '卧推',
+      muscleGroup: '胸',
+    )).id;
   });
 
   tearDown(() async => exec.close());
@@ -53,7 +61,9 @@ void main() {
     final c2 = make();
     expect(await c2.startNew(), StartResult.conflict);
     // 库里仍然只有一条未结束的
-    final rows = await exec.all("SELECT * FROM session WHERE finished_at IS NULL");
+    final rows = await exec.all(
+      "SELECT * FROM session WHERE finished_at IS NULL",
+    );
     expect(rows, hasLength(1));
     expect((await getActiveSession(exec))!.id, firstId);
   });

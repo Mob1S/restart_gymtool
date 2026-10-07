@@ -92,17 +92,26 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
                         for (final entry in groups.entries) ...[
                           Padding(
                             padding: const EdgeInsets.fromLTRB(
-                                AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.sm),
-                            child: Text(entry.key, style: TextStyle(
-                              fontSize: AppFontSize.label,
-                              letterSpacing: AppTracking.label,
-                              color: c.textTertiary,
-                            )),
+                              AppSpacing.lg,
+                              AppSpacing.md,
+                              AppSpacing.lg,
+                              AppSpacing.sm,
+                            ),
+                            child: Text(
+                              entry.key,
+                              style: TextStyle(
+                                fontSize: AppFontSize.label,
+                                letterSpacing: AppTracking.label,
+                                color: c.textTertiary,
+                              ),
+                            ),
                           ),
                           for (final e in entry.value)
                             ListTile(
                               title: Text(e.name),
-                              subtitle: e.equipment == null ? null : Text(e.equipment!),
+                              subtitle: e.equipment == null
+                                  ? null
+                                  : Text(e.equipment!),
                               onTap: () => Navigator.pop(context, e),
                             ),
                         ],

@@ -32,7 +32,8 @@ String describeExercises(List<ExerciseProgress> exercises) {
   }
 
   final first = exercises.first.exerciseName;
-  final what =
-      exercises.length == 1 ? first : '$first 等 ${exercises.length} 个动作';
+  final what = exercises.length == 1
+      ? first
+      : '$first 等 ${exercises.length} 个动作';
   return '$what · 已记 $completed 组';
 }

@@ -34,8 +34,12 @@ class ExerciseStrip extends StatelessWidget {
           for (var i = 0; i < exercises.length; i++)
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.sm),
-              child: _chip(context, exercises[i].exerciseName, i == currentIndex,
-                  () => onSelect(i)),
+              child: _chip(
+                context,
+                exercises[i].exerciseName,
+                i == currentIndex,
+                () => onSelect(i),
+              ),
             ),
           // 旧项目另一处坑：训练里一个动作都没有时是条死路 ——
           // 空态只写了一句「这次训练还没有动作」，没有任何添加入口。
@@ -58,7 +62,12 @@ class ExerciseStrip extends StatelessWidget {
     );
   }
 
-  Widget _chip(BuildContext context, String label, bool active, VoidCallback onTap) {
+  Widget _chip(
+    BuildContext context,
+    String label,
+    bool active,
+    VoidCallback onTap,
+  ) {
     final c = appColors(context);
     return GestureDetector(
       onTap: onTap,
@@ -71,11 +80,14 @@ class ExerciseStrip extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
           border: Border.all(color: active ? c.accent : c.border),
         ),
-        child: Text(label, style: TextStyle(
-          fontSize: AppFontSize.body,
-          fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-          color: active ? c.accent : c.textSecondary,
-        )),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: AppFontSize.body,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+            color: active ? c.accent : c.textSecondary,
+          ),
+        ),
       ),
     );
   }

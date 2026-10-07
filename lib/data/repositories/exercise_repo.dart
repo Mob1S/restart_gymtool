@@ -35,26 +35,26 @@ class ExerciseRow {
   });
 
   factory ExerciseRow.fromMap(Map<String, Object?> m) => ExerciseRow(
-        id: m['id'] as String,
-        name: m['name'] as String,
-        muscleGroup: m['muscle_group'] as String?,
-        equipment: m['equipment'] as String?,
-        isCustom: m['is_custom'] as int,
-        isArchived: m['is_archived'] as int,
-        createdAt: m['created_at'] as int,
-      );
+    id: m['id'] as String,
+    name: m['name'] as String,
+    muscleGroup: m['muscle_group'] as String?,
+    equipment: m['equipment'] as String?,
+    isCustom: m['is_custom'] as int,
+    isArchived: m['is_archived'] as int,
+    createdAt: m['created_at'] as int,
+  );
 }
 
 /// 行 → 实体。把 0/1 还原成布尔。
 Exercise toExercise(ExerciseRow row) => Exercise(
-      id: row.id,
-      name: row.name,
-      muscleGroup: row.muscleGroup,
-      equipment: row.equipment,
-      isCustom: row.isCustom == 1,
-      isArchived: row.isArchived == 1,
-      createdAt: row.createdAt,
-    );
+  id: row.id,
+  name: row.name,
+  muscleGroup: row.muscleGroup,
+  equipment: row.equipment,
+  isCustom: row.isCustom == 1,
+  isArchived: row.isArchived == 1,
+  createdAt: row.createdAt,
+);
 
 /// SELECT 的列清单。抽出来是为了让「列」与「映射」永远对得上。
 const String exerciseColumns =
@@ -87,7 +87,8 @@ String pinyinKey(String name) =>
 /// 这种对人来说毫无规律的顺序。**Dart 的 `String.compareTo` 同样是码点序，
 /// 也不能用。**
 int compareExercises(Exercise a, Exercise b) {
-  final rankDiff = muscleGroupRank(a.muscleGroup) - muscleGroupRank(b.muscleGroup);
+  final rankDiff =
+      muscleGroupRank(a.muscleGroup) - muscleGroupRank(b.muscleGroup);
   if (rankDiff != 0) return rankDiff;
   final byPinyin = pinyinKey(a.name).compareTo(pinyinKey(b.name));
   if (byPinyin != 0) return byPinyin;
@@ -142,7 +143,13 @@ Future<Exercise> createCustomExercise(
   await exec.run(
     '''INSERT INTO exercise (id, name, muscle_group, equipment, is_custom, is_archived, created_at)
        VALUES (?, ?, ?, ?, 1, 0, ?)''',
-    [exercise.id, exercise.name, exercise.muscleGroup, exercise.equipment, exercise.createdAt],
+    [
+      exercise.id,
+      exercise.name,
+      exercise.muscleGroup,
+      exercise.equipment,
+      exercise.createdAt,
+    ],
   );
 
   return exercise;

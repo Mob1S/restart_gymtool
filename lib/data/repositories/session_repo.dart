@@ -24,13 +24,13 @@ class SessionRow {
   });
 
   factory SessionRow.fromMap(Map<String, Object?> m) => SessionRow(
-        id: m['id'] as String,
-        name: m['name'] as String?,
-        startedAt: m['started_at'] as int,
-        finishedAt: m['finished_at'] as int?,
-        note: m['note'] as String?,
-        templateId: m['template_id'] as String?,
-      );
+    id: m['id'] as String,
+    name: m['name'] as String?,
+    startedAt: m['started_at'] as int,
+    finishedAt: m['finished_at'] as int?,
+    note: m['note'] as String?,
+    templateId: m['template_id'] as String?,
+  );
 }
 
 /// `session_exercise` 表的原始行。
@@ -49,7 +49,8 @@ class SessionExerciseRow {
     this.note,
   });
 
-  factory SessionExerciseRow.fromMap(Map<String, Object?> m) => SessionExerciseRow(
+  factory SessionExerciseRow.fromMap(Map<String, Object?> m) =>
+      SessionExerciseRow(
         id: m['id'] as String,
         sessionId: m['session_id'] as String,
         exerciseId: m['exercise_id'] as String,
@@ -59,24 +60,26 @@ class SessionExerciseRow {
 }
 
 WorkoutSession toSession(SessionRow row) => WorkoutSession(
-      id: row.id,
-      name: row.name,
-      startedAt: row.startedAt,
-      finishedAt: row.finishedAt,
-      note: row.note,
-      templateId: row.templateId,
-    );
+  id: row.id,
+  name: row.name,
+  startedAt: row.startedAt,
+  finishedAt: row.finishedAt,
+  note: row.note,
+  templateId: row.templateId,
+);
 
 SessionExercise toSessionExercise(SessionExerciseRow row) => SessionExercise(
-      id: row.id,
-      sessionId: row.sessionId,
-      exerciseId: row.exerciseId,
-      position: row.position,
-      note: row.note,
-    );
+  id: row.id,
+  sessionId: row.sessionId,
+  exerciseId: row.exerciseId,
+  position: row.position,
+  note: row.note,
+);
 
-const String sessionColumns = 'id, name, started_at, finished_at, note, template_id';
-const String sessionExerciseColumns = 'id, session_id, exercise_id, position, note';
+const String sessionColumns =
+    'id, name, started_at, finished_at, note, template_id';
+const String sessionExerciseColumns =
+    'id, session_id, exercise_id, position, note';
 
 /// 开一场新训练。`finishedAt` 与 `note` 一律为空 —— 新训练必然是进行中的。
 ///
@@ -136,7 +139,10 @@ Future<WorkoutSession?> getActiveSession(SqlExecutor exec) async {
 /// 只写这一列，**不碰组记录** —— 训练结束时那些 `is_completed = 0` 的占位组
 /// 就留在库里，靠这个标记被各处排除掉，不需要清理。
 Future<void> finishSession(SqlExecutor exec, String id, int finishedAt) async {
-  await exec.run('UPDATE session SET finished_at = ? WHERE id = ?', [finishedAt, id]);
+  await exec.run('UPDATE session SET finished_at = ? WHERE id = ?', [
+    finishedAt,
+    id,
+  ]);
 }
 
 /// 列出**已结束**的训练，最近的在前。
@@ -198,7 +204,9 @@ Future<List<SessionExercise>> listSessionExercises(
        ORDER BY position ASC''',
     [sessionId],
   );
-  return rows.map((m) => toSessionExercise(SessionExerciseRow.fromMap(m))).toList();
+  return rows
+      .map((m) => toSessionExercise(SessionExerciseRow.fromMap(m)))
+      .toList();
 }
 
 /// 找出这场训练里**最近有动作的那一组**所属的 `session_exercise`。

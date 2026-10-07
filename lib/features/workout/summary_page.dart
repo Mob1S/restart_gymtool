@@ -50,10 +50,7 @@ class _SummaryPageState extends State<SummaryPage> {
       final done = sets.where((s) => s.isCompleted).toList();
       if (done.isEmpty) continue; // 空动作不上总结页
       final ex = await getExercise(exec, se.exerciseId);
-      summaries.add(_ExerciseSummary(
-        name: ex?.name ?? '未知动作',
-        sets: done,
-      ));
+      summaries.add(_ExerciseSummary(name: ex?.name ?? '未知动作', sets: done));
     }
 
     if (!mounted) return;
@@ -67,19 +64,25 @@ class _SummaryPageState extends State<SummaryPage> {
   @override
   Widget build(BuildContext context) {
     final c = appColors(context);
-    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     final session = _session;
     if (session == null) {
       return const Scaffold(body: Center(child: Text('这场训练不存在')));
     }
 
-    final finishedAt = session.finishedAt ??
-        DateTime.now().millisecondsSinceEpoch;
+    final finishedAt =
+        session.finishedAt ?? DateTime.now().millisecondsSinceEpoch;
     final durationSeconds = ((finishedAt - session.startedAt) / 1000).round();
 
     final allSets = _summaries.expand((s) => s.sets).toList();
     final volume = totalVolumeLoad(
-      allSets.map((s) => SetLike(weight: s.weight, reps: s.reps, isCompleted: true)).toList(),
+      allSets
+          .map(
+            (s) => SetLike(weight: s.weight, reps: s.reps, isCompleted: true),
+          )
+          .toList(),
     );
 
     return Scaffold(
@@ -95,9 +98,17 @@ class _SummaryPageState extends State<SummaryPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              StatBlock(label: '时长', value: _minutes(durationSeconds), unit: '分'),
+              StatBlock(
+                label: '时长',
+                value: _minutes(durationSeconds),
+                unit: '分',
+              ),
               StatBlock(label: '总组数', value: '${allSets.length}', unit: '组'),
-              StatBlock(label: '总容量', value: volume.round().toString(), unit: 'kg'),
+              StatBlock(
+                label: '总容量',
+                value: volume.round().toString(),
+                unit: 'kg',
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -105,24 +116,27 @@ class _SummaryPageState extends State<SummaryPage> {
             // 规格附录的口径要求：容量必须写明它是「重量 × 次数」，
             // 且**不能写成「个人最好」** —— 容量是训练量，不是力量成绩
             '总容量（重量 × 次数）',
-            style: TextStyle(fontSize: AppFontSize.label, color: c.textTertiary),
+            style: TextStyle(
+              fontSize: AppFontSize.label,
+              color: c.textTertiary,
+            ),
           ),
           const SizedBox(height: AppSpacing.xl),
 
-          Text('组间休息回顾（粗略参考）', style: TextStyle(
-            fontSize: AppFontSize.h2,
-            fontWeight: FontWeight.w600,
-            color: c.textPrimary,
-          )),
+          Text(
+            '组间休息回顾（粗略参考）',
+            style: TextStyle(
+              fontSize: AppFontSize.h2,
+              fontWeight: FontWeight.w600,
+              color: c.textPrimary,
+            ),
+          ),
           const SizedBox(height: AppSpacing.md),
 
           for (final s in _summaries) _exerciseCard(context, s),
 
           const SizedBox(height: AppSpacing.xl),
-          PrimaryButton(
-            label: '完成',
-            onPressed: () => context.go('/'),
-          ),
+          PrimaryButton(label: '完成', onPressed: () => context.go('/')),
         ],
       ),
     );
@@ -142,31 +156,44 @@ class _SummaryPageState extends State<SummaryPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(s.name, style: TextStyle(
-              fontSize: AppFontSize.title,
-              fontWeight: FontWeight.w600,
-              color: c.textPrimary,
-            )),
+            Text(
+              s.name,
+              style: TextStyle(
+                fontSize: AppFontSize.title,
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+              ),
+            ),
             const SizedBox(height: AppSpacing.sm),
             // ⭐ 原始次数数组**必须原样显示** —— 只给结论不给原始数字，
             // 用户无法核对，也不会相信
-            Text(reps.join(' / '), style: TextStyle(
-              fontSize: AppFontSize.title,
-              color: c.textPrimary,
-              fontFeatures: tabularNums,
-            )),
+            Text(
+              reps.join(' / '),
+              style: TextStyle(
+                fontSize: AppFontSize.title,
+                color: c.textPrimary,
+                fontFeatures: tabularNums,
+              ),
+            ),
             if (feedback != null) ...[
               const SizedBox(height: AppSpacing.sm),
-              Text(feedback.message, style: TextStyle(
-                fontSize: AppFontSize.caption,
-                color: _kindColor(c, feedback.kind),
-              )),
+              Text(
+                feedback.message,
+                style: TextStyle(
+                  fontSize: AppFontSize.caption,
+                  color: _kindColor(c, feedback.kind),
+                ),
+              ),
             ] else ...[
               const SizedBox(height: AppSpacing.sm),
               // 组数 < 3 时明确沉默，不硬给建议
-              Text('组数不足 3 组，暂不判断', style: TextStyle(
-                fontSize: AppFontSize.caption, color: c.textTertiary,
-              )),
+              Text(
+                '组数不足 3 组，暂不判断',
+                style: TextStyle(
+                  fontSize: AppFontSize.caption,
+                  color: c.textTertiary,
+                ),
+              ),
             ],
           ],
         ),
@@ -175,11 +202,11 @@ class _SummaryPageState extends State<SummaryPage> {
   }
 
   Color _kindColor(AppColors c, RestFeedbackKind kind) => switch (kind) {
-        // 界面按 kind 上色，**不解析 message** —— 文案改了类型还在
-        RestFeedbackKind.positive => c.success,
-        RestFeedbackKind.addWeight => c.accent,
-        _ => c.textSecondary,
-      };
+    // 界面按 kind 上色，**不解析 message** —— 文案改了类型还在
+    RestFeedbackKind.positive => c.success,
+    RestFeedbackKind.addWeight => c.accent,
+    _ => c.textSecondary,
+  };
 }
 
 class _ExerciseSummary {

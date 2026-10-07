@@ -30,30 +30,30 @@ class SetRow {
   });
 
   factory SetRow.fromMap(Map<String, Object?> m) => SetRow(
-        id: m['id'] as String,
-        sessionExerciseId: m['session_exercise_id'] as String,
-        position: m['position'] as int,
-        weight: (m['weight'] as num).toDouble(),
-        reps: m['reps'] as int,
-        isCompleted: m['is_completed'] as int,
-        restSeconds: m['rest_seconds'] as int?,
-        restStartedAt: m['rest_started_at'] as int?,
-        completedAt: m['completed_at'] as int?,
-      );
+    id: m['id'] as String,
+    sessionExerciseId: m['session_exercise_id'] as String,
+    position: m['position'] as int,
+    weight: (m['weight'] as num).toDouble(),
+    reps: m['reps'] as int,
+    isCompleted: m['is_completed'] as int,
+    restSeconds: m['rest_seconds'] as int?,
+    restStartedAt: m['rest_started_at'] as int?,
+    completedAt: m['completed_at'] as int?,
+  );
 }
 
 /// `is_completed` 的 0/1 在这里还原成布尔。
 SetEntry toSetEntry(SetRow row) => SetEntry(
-      id: row.id,
-      sessionExerciseId: row.sessionExerciseId,
-      position: row.position,
-      weight: row.weight,
-      reps: row.reps,
-      isCompleted: row.isCompleted == 1,
-      restSeconds: row.restSeconds,
-      restStartedAt: row.restStartedAt,
-      completedAt: row.completedAt,
-    );
+  id: row.id,
+  sessionExerciseId: row.sessionExerciseId,
+  position: row.position,
+  weight: row.weight,
+  reps: row.reps,
+  isCompleted: row.isCompleted == 1,
+  restSeconds: row.restSeconds,
+  restStartedAt: row.restStartedAt,
+  completedAt: row.completedAt,
+);
 
 const String setColumns =
     'id, session_exercise_id, position, weight, reps, is_completed, rest_seconds, rest_started_at, completed_at';
@@ -105,7 +105,10 @@ Future<SetEntry> addSet(
 
 /// 取某个动作（在这一场里）的全部组，**含未完成的占位组** ——
 /// 界面正需要那条占位来确定「当前该记哪一组」。
-Future<List<SetEntry>> listSets(SqlExecutor exec, String sessionExerciseId) async {
+Future<List<SetEntry>> listSets(
+  SqlExecutor exec,
+  String sessionExerciseId,
+) async {
   final rows = await exec.all<Map<String, Object?>>(
     '''SELECT $setColumns FROM set_entry
        WHERE session_exercise_id = ?
@@ -125,8 +128,11 @@ Future<void> updateSetValues(
   double weight,
   int reps,
 ) async {
-  await exec.run('UPDATE set_entry SET weight = ?, reps = ? WHERE id = ?',
-      [weight, reps, setId]);
+  await exec.run('UPDATE set_entry SET weight = ?, reps = ? WHERE id = ?', [
+    weight,
+    reps,
+    setId,
+  ]);
 }
 
 /// 标记一组已完成。**这一步必须立刻落盘** —— 训练记录的全部价值就在于不丢，
@@ -134,7 +140,11 @@ Future<void> updateSetValues(
 ///
 /// [completedAt] 由调用方传入，与休息计时共用同一个 now，
 /// 保证「完成时刻」和「休息开始时刻」不差毫秒。
-Future<void> completeSet(SqlExecutor exec, String setId, int completedAt) async {
+Future<void> completeSet(
+  SqlExecutor exec,
+  String setId,
+  int completedAt,
+) async {
   await exec.run(
     'UPDATE set_entry SET is_completed = 1, completed_at = ? WHERE id = ?',
     [completedAt, setId],
@@ -143,7 +153,10 @@ Future<void> completeSet(SqlExecutor exec, String setId, int completedAt) async 
 
 /// 开始休息计时：**只记时间戳**，之后用「现在 − 这个时间戳」算时长。
 Future<void> startRest(SqlExecutor exec, String setId, int at) async {
-  await exec.run('UPDATE set_entry SET rest_started_at = ? WHERE id = ?', [at, setId]);
+  await exec.run('UPDATE set_entry SET rest_started_at = ? WHERE id = ?', [
+    at,
+    setId,
+  ]);
 }
 
 /// 结束休息计时，写入这段休息的秒数。
@@ -175,7 +188,9 @@ Future<void> endRest(SqlExecutor exec, String setId, int at) async {
 /// 的区别是刻意的：**那种时长不是真实休息，不该作为数据留下来** ——
 /// 休息建议规则要算平均休息时长，一条 8 小时的记录足以把平均值彻底带偏。
 Future<void> cancelRest(SqlExecutor exec, String setId) async {
-  await exec.run('UPDATE set_entry SET rest_started_at = NULL WHERE id = ?', [setId]);
+  await exec.run('UPDATE set_entry SET rest_started_at = NULL WHERE id = ?', [
+    setId,
+  ]);
 }
 
 /// 取某个动作在**更早的某一次训练**里的完成组，用于显示「上次练了多少」。

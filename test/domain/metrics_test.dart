@@ -45,8 +45,10 @@ void main() {
     });
 
     test('60×10 的 e1RM 高于 70×3 —— 「最佳 e1RM」不一定来自最重的那组', () {
-      expect(estimateOneRepMax(60, 10)!,
-          greaterThan(estimateOneRepMax(70, 3)!));
+      expect(
+        estimateOneRepMax(60, 10)!,
+        greaterThan(estimateOneRepMax(70, 3)!),
+      );
     });
   });
 }

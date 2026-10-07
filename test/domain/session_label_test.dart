@@ -1,7 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gym_tracker/domain/session_label.dart';
 
-ExerciseProgress ex(String name, int done, {int pending = 0}) => ExerciseProgress(
+ExerciseProgress ex(String name, int done, {int pending = 0}) =>
+    ExerciseProgress(
       exerciseName: name,
       sets: [
         ...List.generate(done, (_) => const SetProgress(isCompleted: true)),

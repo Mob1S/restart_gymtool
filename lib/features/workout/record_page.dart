@@ -77,7 +77,9 @@ class _RecordPageState extends State<RecordPage> {
   /// 所以这里为 null 就意味着「完成这组」不该可点。
   SetEntry? _pendingOf(ActiveSessionController c) {
     if (c.currentIndex < 0 || c.currentIndex >= c.exercises.length) return null;
-    return _firstOrNull(c.exercises[c.currentIndex].sets.where((s) => !s.isCompleted));
+    return _firstOrNull(
+      c.exercises[c.currentIndex].sets.where((s) => !s.isCompleted),
+    );
   }
 
   Future<void> _complete(ActiveSessionController c) async {
@@ -193,20 +195,26 @@ class _RecordPageState extends State<RecordPage> {
       children: [
         const SizedBox(height: AppSpacing.lg),
 
-        Text(active.exerciseName, style: TextStyle(
-          fontSize: AppFontSize.title,
-          fontWeight: FontWeight.w600,
-          color: sc.textPrimary,
-        )),
+        Text(
+          active.exerciseName,
+          style: TextStyle(
+            fontSize: AppFontSize.title,
+            fontWeight: FontWeight.w600,
+            color: sc.textPrimary,
+          ),
+        ),
         const SizedBox(height: AppSpacing.xs),
 
         // 「第 N / M 组」——旧项目这里踩过「组数只是右上角小灰字，不显眼」，
         // 所以它现在是动作名正下方的一等信息
-        Text('第 ${completed + 1} / $total 组', style: TextStyle(
-          fontSize: AppFontSize.caption,
-          color: sc.textSecondary,
-          fontFeatures: tabularNums,
-        )),
+        Text(
+          '第 ${completed + 1} / $total 组',
+          style: TextStyle(
+            fontSize: AppFontSize.caption,
+            color: sc.textSecondary,
+            fontFeatures: tabularNums,
+          ),
+        ),
 
         const SizedBox(height: AppSpacing.lg),
         _lastPerformanceLine(active, sc),
@@ -268,7 +276,10 @@ class _RecordPageState extends State<RecordPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text('次数', style: TextStyle(fontSize: AppFontSize.label, color: sc.textTertiary)),
+        Text(
+          '次数',
+          style: TextStyle(fontSize: AppFontSize.label, color: sc.textTertiary),
+        ),
         const SizedBox(width: AppSpacing.md),
         NumberStepper(
           value: reps.toDouble(),
@@ -279,12 +290,16 @@ class _RecordPageState extends State<RecordPage> {
         const SizedBox(width: AppSpacing.md),
         SizedBox(
           width: 48,
-          child: Text('$reps', textAlign: TextAlign.center, style: TextStyle(
-            fontSize: AppFontSize.h2,
-            fontWeight: FontWeight.w600,
-            color: sc.textPrimary,
-            fontFeatures: tabularNums,
-          )),
+          child: Text(
+            '$reps',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: AppFontSize.h2,
+              fontWeight: FontWeight.w600,
+              color: sc.textPrimary,
+              fontFeatures: tabularNums,
+            ),
+          ),
         ),
       ],
     );

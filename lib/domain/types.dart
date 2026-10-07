@@ -56,13 +56,13 @@ class WorkoutSession {
   });
 
   WorkoutSession copyWith({int? finishedAt}) => WorkoutSession(
-        id: id,
-        name: name,
-        startedAt: startedAt,
-        finishedAt: finishedAt ?? this.finishedAt,
-        note: note,
-        templateId: templateId,
-      );
+    id: id,
+    name: name,
+    startedAt: startedAt,
+    finishedAt: finishedAt ?? this.finishedAt,
+    note: note,
+    templateId: templateId,
+  );
 }
 
 /// 一次训练里的一个动作（练了什么 + 排第几）。

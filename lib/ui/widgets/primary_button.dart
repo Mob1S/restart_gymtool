@@ -28,7 +28,9 @@ class PrimaryButton extends StatelessWidget {
       ButtonVariant.secondary => c.surfacePressed,
       ButtonVariant.danger => c.danger,
     };
-    final fg = variant == ButtonVariant.secondary ? c.textPrimary : Colors.white;
+    final fg = variant == ButtonVariant.secondary
+        ? c.textPrimary
+        : Colors.white;
     final disabled = onPressed == null;
 
     return SizedBox(

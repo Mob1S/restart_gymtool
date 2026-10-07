@@ -4,11 +4,7 @@ import 'package:gym_tracker/domain/types.dart';
 
 const t0 = 1700000000000;
 
-SetEntry set({
-  required String id,
-  bool done = true,
-  int? restStartedAt,
-}) =>
+SetEntry set({required String id, bool done = true, int? restStartedAt}) =>
     SetEntry(
       id: id,
       sessionExerciseId: 'se1',

@@ -54,8 +54,10 @@ class _DragNumberState extends State<DragNumber> {
     if (steps == 0) return;
     _accumulated -= steps * widget.pixelsPerStep;
 
-    final next = (widget.value + steps * widget.step)
-        .clamp(widget.min, widget.max);
+    final next = (widget.value + steps * widget.step).clamp(
+      widget.min,
+      widget.max,
+    );
     if (next != widget.value) widget.onChanged(_round(next));
   }
 
@@ -85,11 +87,14 @@ class _DragNumberState extends State<DragNumber> {
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
-          Text(widget.unit, style: TextStyle(
-            fontSize: AppFontSize.label,
-            letterSpacing: AppTracking.unit,
-            color: c.textTertiary,
-          )),
+          Text(
+            widget.unit,
+            style: TextStyle(
+              fontSize: AppFontSize.label,
+              letterSpacing: AppTracking.unit,
+              color: c.textTertiary,
+            ),
+          ),
         ],
       ),
     );

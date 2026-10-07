@@ -12,14 +12,15 @@ ThemeData buildTheme(AppColors colors) {
     useMaterial3: true,
     brightness: isDark ? Brightness.dark : Brightness.light,
     scaffoldBackgroundColor: colors.background,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: colors.accent,
-      brightness: isDark ? Brightness.dark : Brightness.light,
-    ).copyWith(
-      surface: colors.surface,
-      primary: colors.accent,
-      error: colors.danger,
-    ),
+    colorScheme:
+        ColorScheme.fromSeed(
+          seedColor: colors.accent,
+          brightness: isDark ? Brightness.dark : Brightness.light,
+        ).copyWith(
+          surface: colors.surface,
+          primary: colors.accent,
+          error: colors.danger,
+        ),
     dividerColor: colors.border,
     textTheme: TextTheme(
       displayLarge: TextStyle(
@@ -43,8 +44,14 @@ ThemeData buildTheme(AppColors colors) {
         fontWeight: FontWeight.w600,
         color: colors.textPrimary,
       ),
-      bodyMedium: TextStyle(fontSize: AppFontSize.body, color: colors.textPrimary),
-      bodySmall: TextStyle(fontSize: AppFontSize.caption, color: colors.textSecondary),
+      bodyMedium: TextStyle(
+        fontSize: AppFontSize.body,
+        color: colors.textPrimary,
+      ),
+      bodySmall: TextStyle(
+        fontSize: AppFontSize.caption,
+        color: colors.textSecondary,
+      ),
       labelSmall: TextStyle(
         fontSize: AppFontSize.label,
         letterSpacing: AppTracking.label,

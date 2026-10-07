@@ -35,13 +35,16 @@ void main() {
       "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
     );
     final names = rows.map((r) => r['name'] as String).toSet();
-    expect(names, containsAll(<String>[
-      'app_meta',
-      'exercise',
-      'session',
-      'session_exercise',
-      'set_entry',
-    ]));
+    expect(
+      names,
+      containsAll(<String>[
+        'app_meta',
+        'exercise',
+        'session',
+        'session_exercise',
+        'set_entry',
+      ]),
+    );
   });
 
   test('三行索引都建出来了（漏了会退化成全表扫描）', () async {
@@ -50,11 +53,14 @@ void main() {
       "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%'",
     );
     final names = rows.map((r) => r['name'] as String).toSet();
-    expect(names, containsAll(<String>[
-      'idx_session_finished',
-      'idx_session_exercise_session',
-      'idx_set_entry_session_exercise',
-    ]));
+    expect(
+      names,
+      containsAll(<String>[
+        'idx_session_finished',
+        'idx_session_exercise_session',
+        'idx_set_entry_session_exercise',
+      ]),
+    );
   });
 
   test('外键级联生效 —— 删 session 会带走它的 session_exercise', () async {
@@ -62,9 +68,7 @@ void main() {
     await exec.run(
       "INSERT INTO exercise (id, name, is_custom, is_archived, created_at) VALUES ('e1', '深蹲', 0, 0, 1)",
     );
-    await exec.run(
-      "INSERT INTO session (id, started_at) VALUES ('s1', 1)",
-    );
+    await exec.run("INSERT INTO session (id, started_at) VALUES ('s1', 1)");
     await exec.run(
       "INSERT INTO session_exercise (id, session_id, exercise_id, position) VALUES ('se1', 's1', 'e1', 0)",
     );
@@ -121,7 +125,9 @@ void main() {
     );
     expect(await getSchemaVersion(exec), 2);
 
-    final before = await exec.all<Map<String, Object?>>('PRAGMA table_info(session)');
+    final before = await exec.all<Map<String, Object?>>(
+      'PRAGMA table_info(session)',
+    );
     expect(
       before.map((c) => c['name']),
       isNot(contains('template_id')),
@@ -131,7 +137,9 @@ void main() {
     await migrate(exec);
 
     expect(await getSchemaVersion(exec), schemaVersion);
-    final after = await exec.all<Map<String, Object?>>('PRAGMA table_info(session)');
+    final after = await exec.all<Map<String, Object?>>(
+      'PRAGMA table_info(session)',
+    );
     expect(
       after.map((c) => c['name']),
       contains('template_id'),

@@ -81,8 +81,11 @@ void main() {
     final rows = await exec.all<Map<String, Object?>>(
       'SELECT started_at FROM session ORDER BY rowid ASC',
     );
-    expect(rows[0]['started_at'], rows[1]['started_at'],
-        reason: '两行必须真的并列，否则这条用例在空转');
+    expect(
+      rows[0]['started_at'],
+      rows[1]['started_at'],
+      reason: '两行必须真的并列，否则这条用例在空转',
+    );
 
     expect(
       (await getActiveSession(exec))?.id,

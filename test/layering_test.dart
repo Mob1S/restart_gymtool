@@ -27,7 +27,10 @@ Map<String, String> _allLibSources() {
 
 /// 取出一个源文件里所有 `import '...'` / `export '...'` 的目标字符串。
 List<String> _importsOf(String source) {
-  final re = RegExp(r'''^\s*(?:import|export)\s+['"]([^'"]+)['"]''', multiLine: true);
+  final re = RegExp(
+    r'''^\s*(?:import|export)\s+['"]([^'"]+)['"]''',
+    multiLine: true,
+  );
   return re.allMatches(source).map((m) => m.group(1)!).toList();
 }
 
@@ -142,7 +145,8 @@ class _DartScanner {
       }
       // 规则 3：字符串（引号本身，或 r/R 前缀 + 引号）
       final isQuote = c == "'" || c == '"';
-      final isRawPrefix = (c == 'r' || c == 'R') &&
+      final isRawPrefix =
+          (c == 'r' || c == 'R') &&
           _i + 1 < _n &&
           (_s[_i + 1] == "'" || _s[_i + 1] == '"') &&
           (_i == 0 || !_identChar.hasMatch(_s[_i - 1]));
@@ -164,8 +168,7 @@ class _DartScanner {
       _i++;
     }
     final quote = _s[_i];
-    final isTriple =
-        _i + 2 < _n && _s[_i + 1] == quote && _s[_i + 2] == quote;
+    final isTriple = _i + 2 < _n && _s[_i + 1] == quote && _s[_i + 2] == quote;
     final line = _lineAt(_i);
     _i += isTriple ? 3 : 1;
 
@@ -305,8 +308,11 @@ void main() {
         }
       }
     });
-    expect(violations, isEmpty,
-        reason: '界面层只能通过 repositories 访问数据，不能碰 db/：\n${violations.join('\n')}');
+    expect(
+      violations,
+      isEmpty,
+      reason: '界面层只能通过 repositories 访问数据，不能碰 db/：\n${violations.join('\n')}',
+    );
   });
 
   test('规则 2：SQL 字符串只允许出现在 data/db/ 与 data/repositories/', () {
@@ -323,7 +329,8 @@ void main() {
     final violations = <String>[];
     sources.forEach((path, source) {
       // db/ 放 schema 与迁移 SQL，repositories/ 放查询 SQL —— 这两处是允许的
-      if (_under(path, 'lib/data/db/') || _under(path, 'lib/data/repositories/')) {
+      if (_under(path, 'lib/data/db/') ||
+          _under(path, 'lib/data/repositories/')) {
         return;
       }
       for (final literal in _dartStrings(source)) {
@@ -332,8 +339,12 @@ void main() {
         }
       }
     });
-    expect(violations, isEmpty,
-        reason: 'SQL 只允许出现在 data/db/ 与 data/repositories/：\n${violations.join('\n')}');
+    expect(
+      violations,
+      isEmpty,
+      reason:
+          'SQL 只允许出现在 data/db/ 与 data/repositories/：\n${violations.join('\n')}',
+    );
   });
 
   test('规则 3：lib/domain/ 不得 import Flutter（它必须能用纯 dart test 跑）', () {
@@ -348,8 +359,11 @@ void main() {
         }
       }
     });
-    expect(violations, isEmpty,
-        reason: 'domain/ 是纯逻辑层，不得依赖 Flutter / 数据库：\n${violations.join('\n')}');
+    expect(
+      violations,
+      isEmpty,
+      reason: 'domain/ 是纯逻辑层，不得依赖 Flutter / 数据库：\n${violations.join('\n')}',
+    );
   });
 
   test('规则 4：lib/ui/ 必须是纯视觉层 —— 不碰数据库、不含状态', () {
@@ -373,8 +387,11 @@ void main() {
         }
       }
     });
-    expect(violations, isEmpty,
-        reason: 'ui/ 是纯视觉层，不得依赖状态或业务界面：\n${violations.join('\n')}');
+    expect(
+      violations,
+      isEmpty,
+      reason: 'ui/ 是纯视觉层，不得依赖状态或业务界面：\n${violations.join('\n')}',
+    );
   });
 
   // ---------------------------------------------------------------------
@@ -402,18 +419,26 @@ void f() {
 
     test('扫描器：注释里的撇号、字符串里的 //、多行串里的 --、插值里的嵌套串', () {
       // `// don't` 里的撇号若被当成字符串开头，后面半份文件会被吞掉
-      final apostrophe = _dartStrings("void f() {\n  // don't\n  final a = 'x';\n  print(a);\n}\n");
+      final apostrophe = _dartStrings(
+        "void f() {\n  // don't\n  final a = 'x';\n  print(a);\n}\n",
+      );
       expect(apostrophe.map((l) => l.text), ['x']);
 
-      final url = _dartStrings("void f() { final u = 'http://x/y'; print(u); }\n");
+      final url = _dartStrings(
+        "void f() { final u = 'http://x/y'; print(u); }\n",
+      );
       expect(url.map((l) => l.text), ['http://x/y']);
 
       // `--` 是 SQL 的注释符、Dart 的减减运算符，必须原样留在字面量里
-      final dashes = _dartStrings("void f() { final q = 'SELECT 1 -- 注释'; print(q); }\n");
+      final dashes = _dartStrings(
+        "void f() { final q = 'SELECT 1 -- 注释'; print(q); }\n",
+      );
       expect(dashes.single.text, contains('--'));
 
       // `${…}` 里嵌着单引号：不处理的话外层串会在这里被提前收尾
-      final nested = _dartStrings("void f() { final s = 'a\${m['k']}b'; print(s); }\n");
+      final nested = _dartStrings(
+        "void f() { final s = 'a\${m['k']}b'; print(s); }\n",
+      );
       // 内容不含引号：嵌套的那个字面量收下的是 `k`，外层是 `a$b`
       expect(nested.map((l) => l.text), containsAll(<String>['k', r'a$b']));
     });

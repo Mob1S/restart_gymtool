@@ -54,7 +54,9 @@ void main() {
   test('归档的动作不出现在列表里，但仍能按 id 取到', () async {
     await seedExercisesIfEmpty(exec);
     final target = (await listExercises(exec)).first;
-    await exec.run('UPDATE exercise SET is_archived = 1 WHERE id = ?', [target.id]);
+    await exec.run('UPDATE exercise SET is_archived = 1 WHERE id = ?', [
+      target.id,
+    ]);
 
     final visible = await listExercises(exec);
     expect(visible.any((e) => e.id == target.id), isFalse);
@@ -74,7 +76,9 @@ void main() {
     await createCustomExercise(exec, name: '深蹲架', muscleGroup: '腿');
     await createCustomExercise(exec, name: '保加利亚', muscleGroup: '腿');
     await createCustomExercise(exec, name: '硬拉', muscleGroup: '腿');
-    final legs = (await listExercises(exec)).where((e) => e.muscleGroup == '腿').toList();
+    final legs = (await listExercises(exec))
+        .where((e) => e.muscleGroup == '腿')
+        .toList();
     // 按码点序会排成「保加利亚、硬拉、深蹲架」——
     // 拼音序才是中文用户预期的「保加利亚(bao)、深蹲架(shen)、硬拉(ying)」
     final names = legs.map((e) => e.name).toList();
@@ -100,8 +104,12 @@ void main() {
     // 测试会全绿地放行。
     //
     // 一条永远绿的守卫等于没有守卫。这条断言在前一种实现下过、在后一种下必红。
-    expect(names.indexOf('臀推'), lessThan(names.indexOf('站姿提踵')),
-        reason: '拼音序 tun < zhan，臀推应排在站姿提踵之前；'
-            '若这里红了，说明排序退回了 UTF-8 码点序');
+    expect(
+      names.indexOf('臀推'),
+      lessThan(names.indexOf('站姿提踵')),
+      reason:
+          '拼音序 tun < zhan，臀推应排在站姿提踵之前；'
+          '若这里红了，说明排序退回了 UTF-8 码点序',
+    );
   });
 }

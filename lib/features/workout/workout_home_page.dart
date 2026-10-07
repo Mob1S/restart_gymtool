@@ -105,11 +105,14 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: AppSpacing.xl),
-          Text('训练', style: TextStyle(
-            fontSize: AppFontSize.h1,
-            fontWeight: FontWeight.w700,
-            color: sc.textPrimary,
-          )),
+          Text(
+            '训练',
+            style: TextStyle(
+              fontSize: AppFontSize.h1,
+              fontWeight: FontWeight.w700,
+              color: sc.textPrimary,
+            ),
+          ),
           const SizedBox(height: AppSpacing.xl),
 
           if (c.session != null)
@@ -118,17 +121,21 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('继续 ${formatDateTime(c.session!.startedAt)} 的训练',
-                      style: TextStyle(
-                        fontSize: AppFontSize.title,
-                        fontWeight: FontWeight.w600,
-                        color: sc.accent,
-                      )),
+                  Text(
+                    '继续 ${formatDateTime(c.session!.startedAt)} 的训练',
+                    style: TextStyle(
+                      fontSize: AppFontSize.title,
+                      fontWeight: FontWeight.w600,
+                      color: sc.accent,
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
                     _describe(c),
                     style: TextStyle(
-                        fontSize: AppFontSize.caption, color: sc.textSecondary),
+                      fontSize: AppFontSize.caption,
+                      color: sc.textSecondary,
+                    ),
                   ),
                 ],
               ),

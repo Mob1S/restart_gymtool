@@ -13,7 +13,11 @@ void main() {
   setUp(() async {
     exec = await FfiExecutor.openInMemory();
     await migrate(exec);
-    squatId = (await createCustomExercise(exec, name: '深蹲', muscleGroup: '腿')).id;
+    squatId = (await createCustomExercise(
+      exec,
+      name: '深蹲',
+      muscleGroup: '腿',
+    )).id;
   });
 
   tearDown(() async => exec.close());
@@ -39,8 +43,10 @@ void main() {
     final c = await started();
     // 占位组初始是 20×8，用户改成 42.5×6
     await c.completeCurrentSet(42.5, 6);
-    final set = (await listSets(exec, c.exercises.single.sessionExercise.id))
-        .singleWhere((s) => s.isCompleted);
+    final set = (await listSets(
+      exec,
+      c.exercises.single.sessionExercise.id,
+    )).singleWhere((s) => s.isCompleted);
     expect(set.weight, 42.5);
     expect(set.reps, 6);
   });
@@ -67,8 +73,10 @@ void main() {
 
     // 手工把休息开始时间往前推 90 秒，避免测试里真的等
     final startedAt = DateTime.now().millisecondsSinceEpoch - 90000;
-    await exec.run('UPDATE set_entry SET rest_started_at = ? WHERE is_completed = 1',
-        [startedAt]);
+    await exec.run(
+      'UPDATE set_entry SET rest_started_at = ? WHERE is_completed = 1',
+      [startedAt],
+    );
     await c.resume(); // 重新载入，让内存里的值跟上
 
     await c.beginNextSet();
@@ -90,7 +98,7 @@ void main() {
     final id = await c.endWorkout();
 
     expect(id, isNotNull);
-    expect(c.session, isNull);   // 立刻清空，不等用户在总结页点完成
+    expect(c.session, isNull); // 立刻清空，不等用户在总结页点完成
     expect(c.exercises, isEmpty);
     expect(await getActiveSession(exec), isNull);
   });
@@ -99,14 +107,18 @@ void main() {
     final c = await started();
     await c.completeCurrentSet(40, 8);
     final startedAt = DateTime.now().millisecondsSinceEpoch - 60000;
-    await exec.run('UPDATE set_entry SET rest_started_at = ? WHERE is_completed = 1',
-        [startedAt]);
+    await exec.run(
+      'UPDATE set_entry SET rest_started_at = ? WHERE is_completed = 1',
+      [startedAt],
+    );
     await c.resume();
 
     await c.endWorkout();
 
-    final seId = (await listSessionExercises(exec, (await listSessions(exec, 1)).single.id))
-        .single.id;
+    final seId = (await listSessionExercises(
+      exec,
+      (await listSessions(exec, 1)).single.id,
+    )).single.id;
     final set = (await listSets(exec, seId)).singleWhere((s) => s.isCompleted);
     // 不收尾的话这一组永远是 NULL，总结页算不出平均休息
     expect(set.restSeconds, closeTo(60, 2));
@@ -154,8 +166,11 @@ void main() {
     // 若不拦，beginNextSet / endWorkout 只会结束找到的那一段，
     // 另一段的 rest_seconds **永远是 NULL** —— 总结页平均休息少一个数据点，
     // 而且**不报错**。这是「同时至多一段休息在进行」这条不变量的意义。
-    final benchId =
-        (await createCustomExercise(exec, name: '卧推', muscleGroup: '胸')).id;
+    final benchId = (await createCustomExercise(
+      exec,
+      name: '卧推',
+      muscleGroup: '胸',
+    )).id;
 
     final c = ActiveSessionController(exec);
     await c.startNew();
@@ -166,9 +181,10 @@ void main() {
     c.setCurrentIndex(0);
     await c.completeCurrentSet(40, 8);
     final squatSeId = c.exercises[0].sessionExercise.id;
-    final squatRestingBefore = (await listSets(exec, squatSeId))
-        .singleWhere((s) => s.isCompleted)
-        .restStartedAt;
+    final squatRestingBefore = (await listSets(
+      exec,
+      squatSeId,
+    )).singleWhere((s) => s.isCompleted).restStartedAt;
     expect(squatRestingBefore, isNotNull, reason: '前置条件：深蹲此时应在休息中');
 
     // 手工把那一段休息的起点往前推 90 秒（避免测试真的等）
@@ -187,20 +203,28 @@ void main() {
     final squatSets = await listSets(exec, squatSeId);
     final squatDone = squatSets.singleWhere((s) => s.isCompleted);
     expect(squatDone.restStartedAt, isNull, reason: '深蹲那段休息应已被结束');
-    expect(squatDone.restSeconds, closeTo(90, 2),
-        reason: '深蹲那段休息的时长必须被记下来 —— 这正是「别丢数据」那条');
+    expect(
+      squatDone.restSeconds,
+      closeTo(90, 2),
+      reason: '深蹲那段休息的时长必须被记下来 —— 这正是「别丢数据」那条',
+    );
 
     // ② 卧推那一段正在进行
     final benchSeId = c.exercises[1].sessionExercise.id;
-    final benchDone = (await listSets(exec, benchSeId))
-        .singleWhere((s) => s.isCompleted);
+    final benchDone = (await listSets(
+      exec,
+      benchSeId,
+    )).singleWhere((s) => s.isCompleted);
     expect(benchDone.restStartedAt, isNotNull);
 
     // ③ 全库此时**至多一段**休息在进行
     final allResting = await exec.all<Map<String, Object?>>(
       'SELECT id FROM set_entry WHERE rest_started_at IS NOT NULL',
     );
-    expect(allResting, hasLength(1),
-        reason: '同时只允许一段休息在进行 —— 多一段就会有一组的 rest_seconds 永远是 NULL');
+    expect(
+      allResting,
+      hasLength(1),
+      reason: '同时只允许一段休息在进行 —— 多一段就会有一组的 rest_seconds 永远是 NULL',
+    );
   });
 }

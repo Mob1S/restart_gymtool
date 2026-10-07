@@ -20,19 +20,36 @@ class SettingsPage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
       children: [
         const SizedBox(height: AppSpacing.xl),
-        Text('设置', style: TextStyle(
-          fontSize: AppFontSize.h1, fontWeight: FontWeight.w700, color: c.textPrimary)),
+        Text(
+          '设置',
+          style: TextStyle(
+            fontSize: AppFontSize.h1,
+            fontWeight: FontWeight.w700,
+            color: c.textPrimary,
+          ),
+        ),
         const SizedBox(height: AppSpacing.xl),
 
-        Text('外观', style: TextStyle(
-          fontSize: AppFontSize.label, letterSpacing: AppTracking.label, color: c.textTertiary)),
+        Text(
+          '外观',
+          style: TextStyle(
+            fontSize: AppFontSize.label,
+            letterSpacing: AppTracking.label,
+            color: c.textTertiary,
+          ),
+        ),
         const SizedBox(height: AppSpacing.sm),
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('主题', style: TextStyle(
-                fontSize: AppFontSize.title, color: c.textPrimary)),
+              Text(
+                '主题',
+                style: TextStyle(
+                  fontSize: AppFontSize.title,
+                  color: c.textPrimary,
+                ),
+              ),
               const SizedBox(height: AppSpacing.md),
               // 三态，不是布尔 —— 布尔表达不了「跟随系统」，
               // 而它才是默认值、也是大多数人想要的
