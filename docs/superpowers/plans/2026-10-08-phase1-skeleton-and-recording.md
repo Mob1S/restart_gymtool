@@ -38,8 +38,22 @@
 - **次数数组必须原样显示**（「5 / 5 / 5 / 3」），只给结论不给原始数字用户不会信
 - 提示**必须包含正反馈分支**
 
+**仓储层行对象的命名约定（Task 6/7/8 都适用）**
+- `XxxRow` 的**字段用 camelCase，map 的键与 SQL 里的列名用 snake_case** ——
+  两者的对应关系由 `XxxRow.fromMap` 一处显式写出，别处不重复。
+- **不要**用 snake_case 字段去「镜像列名」再靠 `// ignore_for_file: non_constant_identifier_names`
+  压住 lint。Dart 的标识符规范就是 camelCase，在新代码库里靠 ignore 绕过它是味道；
+  而那点「一眼可查」的收益本来就由 `fromMap` 提供了。
+- 参考实现：`lib/data/repositories/exercise_repo.dart` 的 `ExerciseRow`。
+- （计划初版用的是 snake_case 字段 + ignore，**已改正**。）
+
 **测试纪律**
 - **不写会随机变红的测试** —— 时间相关断言必须显式固定时间戳，绝不依赖"两次调用恰好落在同一毫秒"
+- **不写会「永远绿」的测试** —— 一条守卫写完必须**证明它能把坏的实现判红**。
+  实测教训（Task 6）：计划初版那条「中文按拼音序」的断言用的三个字
+  保 U+4FDD / 深 U+6DF1 / 硬 U+786C，**码点序恰好就是拼音序** ——
+  把 `pinyinKey` 换回 `name.compareTo` 后它依然通过。选择断言数据时，
+  要挑**两种实现下顺序相反**的那一组，并做变异验证。
 - 逻辑不留在带 Widget 的文件里 —— 遇到就把函数移进 `domain/`
 - 每个 Task 结束后 `flutter test` 必须全绿才允许提交
 
@@ -65,6 +79,7 @@
 | `lib/data/db/schema.dart` | 建表 SQL |
 | `lib/data/db/migrations.dart` | 只追加的版本化迁移 |
 | `lib/data/db/database.dart` | 打开库 + 跑迁移 + 开外键 |
+| `lib/data/ids.dart` | `newId()` —— 全项目唯一的 id 生成处 |
 | `lib/data/repositories/seed.dart` | 52 个预置动作 |
 | `lib/data/repositories/exercise_repo.dart` | 动作库读写 |
 | `lib/data/repositories/session_repo.dart` | 训练与训练内动作 |
@@ -1997,11 +2012,32 @@ void main() {
     await createCustomExercise(exec, name: '保加利亚', muscleGroup: '腿');
     await createCustomExercise(exec, name: '硬拉', muscleGroup: '腿');
     final legs = (await listExercises(exec)).where((e) => e.muscleGroup == '腿').toList();
-    // 按码点序会排成「保加利亚、硬拉、深蹲架」——
-    // 拼音序才是中文用户预期的「保加利亚(bao)、深蹲架(shen)、硬拉(ying)」
     final names = legs.map((e) => e.name).toList();
     expect(names.indexOf('保加利亚'), lessThan(names.indexOf('深蹲架')));
     expect(names.indexOf('深蹲架'), lessThan(names.indexOf('硬拉')));
+  });
+
+  test('⭐ 排序守卫必须能把「码点序」判红 —— 否则它是空转的', () async {
+    await seedExercisesIfEmpty(exec);
+    final legs = (await listExercises(exec))
+        .where((e) => e.muscleGroup == '腿')
+        .toList();
+    final names = legs.map((e) => e.name).toList();
+
+    // 臀推(tun, U+81C0) 与 站姿提踵(zhan, U+7AD9)：
+    //   拼音序  tun < zhan           → 臀推在前
+    //   码点序  U+7AD9(31449) < U+81C0(33216) → 站姿提踵在前，**方向相反**
+    //
+    // ⚠️ 这条断言是**补上来的**，因为上面那条「中文按拼音序」是**空转**的：
+    // 它用的三个字 保 U+4FDD / 深 U+6DF1 / 硬 U+786C，**码点序恰好就是拼音序**。
+    // 实测确认过：把 compareExercises 里的 pinyinKey 换成纯 name.compareTo
+    // 之后，上面那条断言**依然通过** —— 将来有人删掉拼音排序，测试会全绿放行。
+    //
+    // 一条永远绿的守卫等于没有守卫。这条断言在前一种实现下过、在后一种下必红
+    // （变异验证：换回码点序后它报 `Expected: a value less than <5>, Actual: <11>`）。
+    expect(names.indexOf('臀推'), lessThan(names.indexOf('站姿提踵')),
+        reason: '拼音序 tun < zhan，臀推应排在站姿提踵之前；'
+            '若这里红了，说明排序退回了 UTF-8 码点序');
   });
 }
 ```
@@ -2011,18 +2047,32 @@ void main() {
 Run: `flutter test test/data/exercise_repo_test.dart`
 Expected: FAIL —— `exercise_repo.dart` 不存在
 
-- [ ] **Step 3: 写 `lib/data/repositories/seed.dart`**
+- [ ] **Step 3a: 写 `lib/data/ids.dart`**
 
 `id` 不写死 —— 播种时用 `newId()` 现生成，避免多设备撞 id。
+
+> **`newId()` 住在 `lib/data/ids.dart`，不放在任何仓储文件里。**
+> 计划初版把它塞在 `seed.dart` 里并自注「是权宜」—— 已经落实为独立文件。
+> 理由：播种、建训练、建组、建自建动作都要用它，
+> 谁都不该为了拿一个 id 生成器去 import 一个语义无关的模块
+> （比如 Task 7/8 为了 `newId()` 而 import `seed.dart`，读起来像在用预置动作表）。
 
 ```dart
 import 'package:uuid/uuid.dart';
 
 const _uuid = Uuid();
 
-/// 新的唯一 id。全项目只有这一处生成 id，方便将来换实现。
+/// 新的唯一 id。**全项目只有这一处生成 id**，方便将来换实现
+/// （比如换成有序 id、或加前缀便于排查）。
+///
+/// 放在 `data/ids.dart` 而不是某个仓储文件里：播种、建训练、建组、
+/// 建自建动作都要用它，谁都不该为了拿它去 import 一个语义无关的模块。
 String newId() => _uuid.v4();
+```
 
+- [ ] **Step 3b: 写 `lib/data/repositories/seed.dart`**
+
+```dart
 /// 预置动作的模板。
 class SeedExercise {
   final String name;
@@ -2103,8 +2153,8 @@ const List<SeedExercise> seedExercises = [
 ];
 ```
 
-> **`newId()` 放在 `seed.dart` 里是权宜**。更干净的位置是 `lib/data/ids.dart`。
-> 若你这么做，**记得同步改所有 import**，并让 `layering_test.dart` 保持绿色。
+> **`newId()` 现已住在 `lib/data/ids.dart`**（见 Step 3a）。仓储与测试从那里 import，
+> **不要**再从 `seed.dart` 取它。
 
 - [ ] **Step 4: 写 `lib/data/repositories/exercise_repo.dart`**
 
@@ -2116,30 +2166,30 @@ import 'seed.dart';
 class ExerciseRow {
   final String id;
   final String name;
-  final String? muscle_group;
+  final String? muscleGroup;
   final String? equipment;
-  final int is_custom;
-  final int is_archived;
-  final int created_at;
+  final int isCustom;
+  final int isArchived;
+  final int createdAt;
 
   const ExerciseRow({
     required this.id,
     required this.name,
-    this.muscle_group,
+    this.muscleGroup,
     this.equipment,
-    required this.is_custom,
-    required this.is_archived,
-    required this.created_at,
+    required this.isCustom,
+    required this.isArchived,
+    required this.createdAt,
   });
 
   factory ExerciseRow.fromMap(Map<String, Object?> m) => ExerciseRow(
         id: m['id'] as String,
         name: m['name'] as String,
-        muscle_group: m['muscle_group'] as String?,
+        muscleGroup: m['muscle_group'] as String?,
         equipment: m['equipment'] as String?,
-        is_custom: m['is_custom'] as int,
-        is_archived: m['is_archived'] as int,
-        created_at: m['created_at'] as int,
+        isCustom: m['is_custom'] as int,
+        isArchived: m['is_archived'] as int,
+        createdAt: m['created_at'] as int,
       );
 }
 
@@ -2147,11 +2197,11 @@ class ExerciseRow {
 Exercise toExercise(ExerciseRow row) => Exercise(
       id: row.id,
       name: row.name,
-      muscleGroup: row.muscle_group,
+      muscleGroup: row.muscleGroup,
       equipment: row.equipment,
-      isCustom: row.is_custom == 1,
-      isArchived: row.is_archived == 1,
-      createdAt: row.created_at,
+      isCustom: row.isCustom == 1,
+      isArchived: row.isArchived == 1,
+      createdAt: row.createdAt,
     );
 
 /// SELECT 的列清单。抽出来是为了让「列」与「映射」永远对得上。
@@ -2298,12 +2348,12 @@ Future<void> seedExercisesIfEmpty(SqlExecutor exec) async {
 - [ ] **Step 8: 跑全部测试确认通过**
 
 Run: `flutter test test/data/exercise_repo_test.dart -v`
-Expected: `All tests passed!`（8 个测试）
+Expected: `All tests passed!`（**9** 个测试 —— 计划初版写 8，补上那条非空转的排序守卫后为 9）
 
 - [ ] **Step 9: 提交**
 
 ```bash
-git add lib/data/repositories test/data
+git add lib/data/ids.dart lib/data/repositories test/data
 git commit -m "feat(data): 动作仓储与 52 个预置动作播种，中文按拼音序排序"
 ```
 
@@ -2316,7 +2366,7 @@ git commit -m "feat(data): 动作仓储与 52 个预置动作播种，中文按�
 - Test: `test/data/session_repo_test.dart`
 
 **Interfaces:**
-- Consumes: `SqlExecutor`、`newId()`、`WorkoutSession`、`SessionExercise`
+- Consumes: `SqlExecutor`、`newId()`（来自 `lib/data/ids.dart`）、`WorkoutSession`、`SessionExercise`
 - Produces:
   - `WorkoutSession toSession(SessionRow row)` / `SessionExercise toSessionExercise(SessionExerciseRow row)`
   - `const String sessionColumns` / `sessionExerciseColumns`
@@ -2453,38 +2503,38 @@ import 'seed.dart';
 class SessionRow {
   final String id;
   final String? name;
-  final int started_at;
-  final int? finished_at;
+  final int startedAt;
+  final int? finishedAt;
   final String? note;
-  final String? template_id;
+  final String? templateId;
 
-  const SessionRow({required this.id, this.name, required this.started_at,
-    this.finished_at, this.note, this.template_id});
+  const SessionRow({required this.id, this.name, required this.startedAt,
+    this.finishedAt, this.note, this.templateId});
 
   factory SessionRow.fromMap(Map<String, Object?> m) => SessionRow(
         id: m['id'] as String,
         name: m['name'] as String?,
-        started_at: m['started_at'] as int,
-        finished_at: m['finished_at'] as int?,
+        startedAt: m['started_at'] as int,
+        finishedAt: m['finished_at'] as int?,
         note: m['note'] as String?,
-        template_id: m['template_id'] as String?,
+        templateId: m['template_id'] as String?,
       );
 }
 
 class SessionExerciseRow {
   final String id;
-  final String session_id;
-  final String exercise_id;
+  final String sessionId;
+  final String exerciseId;
   final int position;
   final String? note;
 
-  const SessionExerciseRow({required this.id, required this.session_id,
-    required this.exercise_id, required this.position, this.note});
+  const SessionExerciseRow({required this.id, required this.sessionId,
+    required this.exerciseId, required this.position, this.note});
 
   factory SessionExerciseRow.fromMap(Map<String, Object?> m) => SessionExerciseRow(
         id: m['id'] as String,
-        session_id: m['session_id'] as String,
-        exercise_id: m['exercise_id'] as String,
+        sessionId: m['session_id'] as String,
+        exerciseId: m['exercise_id'] as String,
         position: m['position'] as int,
         note: m['note'] as String?,
       );
@@ -2493,16 +2543,16 @@ class SessionExerciseRow {
 WorkoutSession toSession(SessionRow row) => WorkoutSession(
       id: row.id,
       name: row.name,
-      startedAt: row.started_at,
-      finishedAt: row.finished_at,
+      startedAt: row.startedAt,
+      finishedAt: row.finishedAt,
       note: row.note,
-      templateId: row.template_id,
+      templateId: row.templateId,
     );
 
 SessionExercise toSessionExercise(SessionExerciseRow row) => SessionExercise(
       id: row.id,
-      sessionId: row.session_id,
-      exerciseId: row.exercise_id,
+      sessionId: row.sessionId,
+      exerciseId: row.exerciseId,
       position: row.position,
       note: row.note,
     );
@@ -2681,7 +2731,7 @@ git commit -m "feat(data): 训练仓储，含 rowid 兜底与 resume 定位查�
 - Test: `test/data/set_repo_test.dart`
 
 **Interfaces:**
-- Consumes: `SqlExecutor`、`newId()`、`SetEntry`
+- Consumes: `SqlExecutor`、`newId()`（来自 `lib/data/ids.dart`）、`SetEntry`
 - Produces:
   - `SetEntry toSetEntry(SetRow row)`
   - `const String setColumns` / `setColumnsPrefixed`
@@ -2858,44 +2908,44 @@ import 'seed.dart';
 /// `set_entry` 表的原始行。
 class SetRow {
   final String id;
-  final String session_exercise_id;
+  final String sessionExerciseId;
   final int position;
   final double weight;
   final int reps;
-  final int is_completed;
-  final int? rest_seconds;
-  final int? rest_started_at;
-  final int? completed_at;
+  final int isCompleted;
+  final int? restSeconds;
+  final int? restStartedAt;
+  final int? completedAt;
 
-  const SetRow({required this.id, required this.session_exercise_id,
+  const SetRow({required this.id, required this.sessionExerciseId,
     required this.position, required this.weight, required this.reps,
-    required this.is_completed, this.rest_seconds, this.rest_started_at,
-    this.completed_at});
+    required this.isCompleted, this.restSeconds, this.restStartedAt,
+    this.completedAt});
 
   factory SetRow.fromMap(Map<String, Object?> m) => SetRow(
         id: m['id'] as String,
-        session_exercise_id: m['session_exercise_id'] as String,
+        sessionExerciseId: m['session_exercise_id'] as String,
         position: m['position'] as int,
         weight: (m['weight'] as num).toDouble(),
         reps: m['reps'] as int,
-        is_completed: m['is_completed'] as int,
-        rest_seconds: m['rest_seconds'] as int?,
-        rest_started_at: m['rest_started_at'] as int?,
-        completed_at: m['completed_at'] as int?,
+        isCompleted: m['is_completed'] as int,
+        restSeconds: m['rest_seconds'] as int?,
+        restStartedAt: m['rest_started_at'] as int?,
+        completedAt: m['completed_at'] as int?,
       );
 }
 
 /// `is_completed` 的 0/1 在这里还原成布尔。
 SetEntry toSetEntry(SetRow row) => SetEntry(
       id: row.id,
-      sessionExerciseId: row.session_exercise_id,
+      sessionExerciseId: row.sessionExerciseId,
       position: row.position,
       weight: row.weight,
       reps: row.reps,
-      isCompleted: row.is_completed == 1,
-      restSeconds: row.rest_seconds,
-      restStartedAt: row.rest_started_at,
-      completedAt: row.completed_at,
+      isCompleted: row.isCompleted == 1,
+      restSeconds: row.restSeconds,
+      restStartedAt: row.restStartedAt,
+      completedAt: row.completedAt,
     );
 
 const String setColumns =
@@ -3243,11 +3293,11 @@ Expected: `All tests passed!`
 | Task 3（format 13 + session_label 5） | 18 | ✅ 实测 |
 | Task 4（layering） | 5 | 待做 |
 | Task 5（migrations） | 6 | 待做 |
-| Task 6（exercise_repo） | 8 | 待做 |
+| Task 6（exercise_repo） | 9 | ✅ 实测 |
 | Task 7（session_repo） | 10 | 待做 |
 | Task 8（set_repo） | 11 | 待做 |
 | Task 9（settings_repo） | 7 | 待做 |
-| **合计** | **约 93** | |
+| **合计** | **约 94** | |
 
 > **条数只是参考，不是判据。** 计划初版给的几个数字（8 / 15 / 39 / 86）有误，
 > 已按实际修正 —— 但真正的判据永远是「全绿」，不是「等于某个数」。

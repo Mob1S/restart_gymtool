@@ -41,6 +41,7 @@ dependencies:
   provider: ^6.1.5+1
   uuid: ^4.6.0
   wakelock_plus: ^1.8.1
+  pinyin: ^3.3.0
 
 dev_dependencies:
   flutter_test:
