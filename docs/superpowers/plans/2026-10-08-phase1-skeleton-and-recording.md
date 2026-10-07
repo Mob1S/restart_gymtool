@@ -1366,22 +1366,46 @@ void main() {
         reason: 'domain/ 是纯逻辑层，不得依赖 Flutter / 数据库：\n${violations.join('\n')}');
   });
 
-  test('规则 4：lib/features/ 不得 import lib/state/ 之外的状态实现细节', () {
-    // 界面通过 provider 拿 controller，但不该直接 import 具体实现文件之外的东西。
-    // 这条规则较松，只挡「界面直接 new 一个仓储」这类越权。
+  test('规则 4：lib/ui/ 必须是纯视觉层 —— 不碰数据库、不含状态', () {
+    // 规格 §2.1 对 ui/ 的定义：「纯视觉层：不碰数据库、不含状态、只回答长什么样」。
+    //
+    // 这条规则**替换了计划初版的一条废规则**。初版写的是
+    // `test('规则 4：lib/features/ 不得 import lib/state/ 之外的状态实现细节')`，
+    // 但实现检查的是「同一个 import URI 里同时含 `repositories/` 和 `sqflite`」——
+    // 那既不是真实存在的违规写法，也不对应任何设计约束，**名字与实现互相说谎**。
+    // 一条名字说谎的测试比没有测试更糟：它让人以为某个约束被守住了。
     final violations = <String>[];
     sources.forEach((path, source) {
-      if (!_under(path, 'lib/features/') && !_under(path, 'lib/ui/')) return;
+      if (!_under(path, 'lib/ui/')) return;
       for (final imp in _importsOf(source)) {
-        if (imp.contains('repositories/') && imp.contains('sqflite')) {
+        if (imp.contains('state/') || imp.contains('features/')) {
           violations.add('$path → $imp');
         }
       }
     });
-    expect(violations, isEmpty);
+    expect(violations, isEmpty,
+        reason: 'ui/ 是纯视觉层，不得依赖状态或业务界面：\n${violations.join('\n')}');
   });
 }
 ```
+
+> ⚠️ **规则 2 的已知弱点与收紧时机（实施时实测确认的，不是推测）。**
+>
+> 规则 2 是对**整份源码文本**做正则，不区分注释 / 字符串 / 代码。实测：
+>
+> - **误报两类**：注释里提到 SQL 就红；英文文案里出现 `Insert Into` 这类词组就红。
+> - **漏报严重**：`INSERT OR REPLACE INTO`、`INSERT OR IGNORE INTO`、
+>   `CREATE INDEX IF NOT EXISTS`、`WITH ... SELECT`、`DROP TABLE`、`REPLACE INTO`
+>   全部漏掉；**sqflite 风格把表名与 where 子句分开传的片段化 SQL 是完全的绕过通道**
+>   （`where: 'finished_at IS NULL'`、`table: 'set_entry'`）。
+>
+> **判断：Task 4 阶段保持现状不动，Task 5/6 落地后再收紧。** 理由 ——
+> 现在 `data/db/` 与 `data/repositories/` 还不存在，没有真实代码可验证收紧后的判据，
+> 很可能把规则写偏。**该修的第一顺位是「先剥掉注释再匹配」**（同时消掉两类误报，
+> 且不需要新关键字）。
+>
+> **这条待办必须在 Task 6 之后回头处理**，不要让它烂在那里 ——
+> 一条漏报严重的守卫会给人虚假的安全感，而这正是本测试存在的理由。
 
 - [ ] **Step 2: 跑测试确认通过**
 
