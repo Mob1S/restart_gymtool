@@ -599,7 +599,7 @@ double? estimateOneRepMax(double weight, int reps) {
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `flutter test test/domain/metrics_test.dart -v`
-Expected: `All tests passed!`（8 个测试）
+Expected: `All tests passed!`（**9** 个测试 —— 计划初版写 8，实际 Step 1 的代码块里有 9 个 `test()`：3 条 totalVolumeLoad + 6 条 estimateOneRepMax）
 
 - [ ] **Step 6: 写失败的测试 —— 30 分钟闸门**
 
@@ -707,7 +707,7 @@ SetEntry? findStaleRest(List<SetEntry> sets, int now) {
 - [ ] **Step 9: 跑测试确认通过**
 
 Run: `flutter test test/domain/`
-Expected: `All tests passed!`（metrics 8 + rest 7 = 15 个测试）
+Expected: `All tests passed!`（metrics 9 + rest 7 = **16** 个测试）
 
 - [ ] **Step 10: 提交**
 
@@ -1222,7 +1222,7 @@ String describeExercises(List<ExerciseProgress> exercises) {
 - [ ] **Step 8: 跑测试确认通过**
 
 Run: `flutter test test/domain/`
-Expected: `All tests passed!`（15 + 10 + 9 + 5 = 39 个测试）
+Expected: `All tests passed!`（16 + 10 + 9 + 5 = **40** 个测试）
 
 - [ ] **Step 9: 提交**
 
@@ -3182,7 +3182,27 @@ Expected: `All tests passed!`（7 个测试）
 - [ ] **Step 5: 跑全部测试，确认分层守卫仍然绿色**
 
 Run: `flutter test`
-Expected: `All tests passed!` —— 此时总数约 **6 + 39 + 5 + 8 + 10 + 11 + 7 ≈ 86 条**
+Expected: `All tests passed!`
+
+此时全量总数应为 **84 条**：
+
+| 来源 | 条数 |
+|---|---|
+| `test/smoke/database_smoke_test.dart` | 2 |
+| Task 1（domain metrics + rest） | 16 |
+| Task 2（restAdvice） | 10 |
+| Task 3（format + sessionLabel） | 9 |
+| Task 4（layering） | 5 |
+| Task 5（migrations） | 6 |
+| Task 6（exercise_repo） | 8 |
+| Task 7（session_repo） | 10 |
+| Task 8（set_repo） | 11 |
+| Task 9（settings_repo） | 7 |
+| **合计** | **84** |
+
+> **条数只是参考，不是判据。** 计划初版给的几个数字（8 / 15 / 39 / 86）有误，
+> 已按实际修正 —— 但真正的判据永远是「全绿」，不是「等于某个数」。
+> 若条数对不上，先看**是不是有测试被跳过或没被执行**，而不是去凑数字。
 
 - [ ] **Step 6: 提交**
 
