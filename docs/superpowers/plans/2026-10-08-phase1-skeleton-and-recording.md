@@ -5026,6 +5026,20 @@ git commit -m "feat(ui): 五个基础组件 —— 按钮/卡片/统计块/分�
 
 ### Task 15: 路由 + 四标签外壳
 
+> ⚠️ **本 Task 的 Files 清单初版是漏的，按原样做编译不过。**
+> Step 3 的 `router.dart` import 了 6 个页面，但这里只列了 2 个。缺的 4 个是
+> `features/workout/{workout_home_page,record_page,summary_page}.dart`
+> （分别由 Task 16/17/19 建）与 `state/theme_controller.dart`（Task 20 建）。
+>
+> **处置：先建临时占位文件**，而不是删掉那三条路由 ——
+> 因为 Task 16/17/19 都直接 `context.push('/session/…')`、`context.go('/summary/$id')`，
+> **它们假定路由已经存在**。补占位比改路由表更贴近计划。
+> `theme_controller.dart` 则**直接把 Task 20 Step 1 的代码原样放进去**（不发明替代方案），
+> Task 20 覆盖同一文件即可。
+>
+> 占位文件顶部统一标了 `⚠️ 临时占位 —— Task N 会用真正的页面替换本文件`。
+> **后续 Task 覆盖它们时需先 Read 再 Write**（工具会拒绝覆盖未读过的已存在文件）。
+
 **Files:**
 - Create: `lib/app/router.dart`
 - Create: `lib/app/app_shell.dart`
@@ -5033,6 +5047,15 @@ git commit -m "feat(ui): 五个基础组件 —— 按钮/卡片/统计块/分�
 - Modify: `lib/main.dart`
 - Create: `lib/features/history/history_page.dart`（占位）
 - Create: `lib/features/progress/progress_page.dart`（占位）
+- Create: `lib/features/settings/settings_page.dart`（临时占位，Task 20 替换）
+- Create: `lib/features/workout/{workout_home_page,record_page,summary_page}.dart`（临时占位）
+- Create: `lib/state/theme_controller.dart`（照 Task 20 Step 1 原文，Task 20 覆盖）
+- Modify: `pubspec.yaml`（加 `path` 直接依赖 —— 见下）
+
+> **`path` 包必须显式加依赖**（`flutter pub add path --offline`）。
+> 计划 Step 2 的 `p.join(dir, 'gym_tracker.db')` 用到它，而它此前只是**传递依赖** ——
+> 直接用会触发 `depend_on_referenced_packages`，让 analyze 变红。
+> 不引它就得自己拼字符串，那是为了绕开 lint 而降低正确性。
 
 **Interfaces:**
 - Consumes: `ActiveSessionController`、`theme.dart`
@@ -5341,9 +5364,45 @@ Expected: 底栏四个标签可切换，切到历史/进步显示占位空态。
 - [ ] **Step 6: 提交**
 
 ```bash
-git add lib/app lib/data/db/database.dart lib/features lib/main.dart
+git add lib/app lib/data/db/database.dart lib/features lib/main.dart pubspec.yaml pubspec.lock
 git commit -m "feat(app): 依赖装配、go_router 路由与四标签外壳"
 ```
+
+#### Task 15 实施结果的补充（2026-10-08）
+
+**Chrome 预览的三后端路径实测通过** —— 这是唯一没被测试覆盖的一条，用探针实测：
+
+| 项 | 结果 |
+|---|---|
+| 表 | **6 张全建出来**（说明多语句建表串在 web 后端也经 `splitSqlStatements` 逐条跑了） |
+| 索引 | 3 个 |
+| `app_meta.schema_version` | **3**（三个迁移全跑过，含 v3 的 ALTER） |
+| `PRAGMA foreign_keys` | 1 |
+| `session` 列 | 含 `template_id` |
+| 数据持久化 | **浏览器重启后仍在**（IndexedDB） |
+
+`databaseFactoryFfiWeb.openDatabase(path, options: OpenDatabaseOptions(version: 1))`
+的签名与计划**一致，无需改动**。另有一条计划没写的约束：
+**web 后端不支持 `singleInstance: false`**（传了抛 `ArgumentError`），默认即 `true`，现状正确。
+
+**两条运行时观察（都是计划行为，未擅自改）**：
+
+1. **Chrome 预览用的是 hash URL**（`…/#/history`，不是 `…/history`）—— 工程没调
+   `usePathUrlStrategy()`，这是 Flutter web 的默认。
+2. **`initialLocation: '/'` 会盖掉浏览器地址栏**：停在「历史」时按 F5 会回到「训练」。
+   根源是 go_router 18 的 `GoRouteInformationProvider` 无条件用 `initialLocation`
+   作为初值，全库不读 `defaultRouteName`。
+   **对真机无影响**（没有刷新按钮），只影响 Chrome 预览的体验。
+   若将来觉得碍事，再处理；**实施时没有自作主张改它。**
+
+**一条待办：`dart format` 的风格分歧。**
+`dart format` 报全项目 52 个文件里 **24 个**不符合格式（其中 23 个是 Task 0–14 的文件）。
+原因是计划里的代码用的是 Dart 3.6 时代的续行缩进，而本机 Dart 3.13 的 formatter
+是新 tall style。`flutter analyze` **不管这个**，所以它不影响验收。
+
+**处置：留到 Phase 1 全部做完后，单独一个提交统一跑一次 `dart format`。**
+现在不做，是因为那会产生一个盖住所有文件的巨大 diff、把每次任务的真实改动淹掉。
+**但不要无限期拖** —— 越晚做，卷入的文件越多。
 
 ---
 
