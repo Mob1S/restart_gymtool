@@ -1,3 +1,4 @@
+import '../../domain/metrics.dart';
 import '../../domain/types.dart';
 import '../db/sql_executor.dart';
 import '../ids.dart';
@@ -268,8 +269,10 @@ class SessionSummaryRow {
       // 查询只取已结束的训练，`finished_at` 必非空。这里用 `!` 是刻意的：
       // 真取到 null 说明 WHERE 被改坏了，应当**当场抛**而不是静默算成 0 秒
       // —— 数字悄悄写歪是这一层最难发现的一类错。
-      durationSeconds: ((session.finishedAt! - session.startedAt) / 1000)
-          .round(),
+      durationSeconds: sessionDurationSeconds(
+        session.startedAt,
+        session.finishedAt!,
+      ),
       setCount: m['set_count'] as int,
       // 不能写 `as double`：0 组时 COALESCE 给的是**整数** 0，FFI 后端原样
       // 返回 int，`as double` 会抛。经 num 转一道，两种数字类型都收得住。
