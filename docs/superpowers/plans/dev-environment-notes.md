@@ -617,3 +617,54 @@ http=206 downloaded=8388608 speed=3504427B/s time=2.393717s     ← 3.5 MB/s
 > **没有采纳的两条路，以及为什么不采纳**（都涉及安全，需用户单独批准）：
 > 把 SteamTools CA 导入 JDK `cacerts`（等于让构建链永久信任一个本地中间人根证书）；
 > 关闭 TLS 校验（不可接受）。
+
+---
+
+## 11. ⭐ **PowerShell 5.1 的 `Get-Content`/`Set-Content` 往返会毁掉 UTF-8 源文件**（Phase 2 Task 2 踩到）
+
+### 现象
+
+用「读进来 → 字符串替换 → 写回去」的手法做变异验证：
+
+```powershell
+$orig = Get-Content $p -Raw
+$mutated = $orig -replace '...', '...'
+Set-Content $p -Value $mutated -NoNewline -Encoding utf8
+```
+
+跑完测试再写回 `$orig`，文件却已经废了：
+
+- 全部中文注释变成乱码 —— `flat 时把` → `flat 鏃舵妸`
+- 换行被吃掉若干处，`library;` 与上一行挤成一行
+- 文件开头多了 BOM（`EF BB BF`），之后 `flutter test` 直接加载失败
+
+### 根因
+
+**`Get-Content` 在 Windows PowerShell 5.1 里默认按系统 ANSI 代码页解码**（本机是 GBK），
+不是 UTF-8。于是 UTF-8 的中文字节被当成 GBK 解出一串乱码字符，
+再用 `-Encoding utf8` 写回去，等于**双重编码**。BOM 是 `-Encoding utf8` 自己加的。
+
+最坑的是：**`-Raw` 不改变这一点** —— 它只影响「按行还是整体」，
+不影响用哪张代码页。ASCII 部分（代码本身）完好，所以看起来「只是注释坏了」，
+实际文件已经不能编译（`﻿` + 丢换行）。
+
+### 处置
+
+**不要用 shell 做源文件的读-改-写。** 要改源文件就用 Edit 工具（它对编码是透明的）。
+变异验证也一样 —— 多两次 Edit 往返，比毁掉一个文件便宜。
+
+如果确实需要在 PowerShell 里读写 UTF-8 文本，只有这条是安全的：
+
+```powershell
+$orig = [System.IO.File]::ReadAllText($p, [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText($p, $mutated, [System.Text.UTF8Encoding]::new($false))
+```
+
+`UTF8Encoding($false)` 的 `$false` 是「不写 BOM」。
+
+### 代价与教训
+
+`lib/domain/chart_geometry.dart` 当时**还没提交**（是刚写完正在做变异验证的新文件），
+git 里没有副本。靠主 agent 上下文里留着的完整文件内容手工重写才救回来。
+**新文件在做变异验证之前就该先提交一次** —— 那时它是干净的，
+再改坏也只是一个 `git checkout` 的事。这条适用于所有「写完先折腾再提交」的流程。
