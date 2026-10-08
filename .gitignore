@@ -21,3 +21,5 @@ android/key.properties
 # 系统
 Thumbs.db
 .DS_Store
+# Widget Preview related
+.widget_preview/

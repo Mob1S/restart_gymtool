@@ -14,12 +14,31 @@ import '../../ui/widgets/empty_state.dart';
 /// 这个弹层是旧项目 M2 那个**功能性缺口**的解药 ——
 /// 当时「一次训练只能练一个动作」，用户真机用一次就发现换不了动作，
 /// App 无法完成任何一次真实训练。这次它从第一版就在。
+///
+/// ## 下面这两个参数都不是可选的
+///
+/// Flutter 的 `showModalBottomSheet` **默认两样都不管**，实测：
+///
+/// - **键盘**：`bottom_sheet.dart` 里根本没有 `viewInsets` —— 弹层照旧铺到
+///   屏幕最底，键盘直接盖住列表。实测 300dp 键盘下 6 行动作只剩 1 行露在外面，
+///   而这是**搜索框带 `autofocus`** 的弹层，键盘一打开就在。
+/// - **状态栏**：`useSafeArea` 默认 false，此时
+///   `ModalBottomSheetRoute` 会对内容做 `MediaQuery.removePadding(removeTop: true)`
+///   —— 于是弹层被拖到最高时，搜索框会钻到状态栏底下（实测只差 8dp）。
 Future<Exercise?> showExercisePicker(BuildContext context) {
   return showModalBottomSheet<Exercise>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     backgroundColor: Theme.of(context).colorScheme.surface,
-    builder: (_) => const _ExercisePickerSheet(),
+    // 键盘让位：把弹层整体抬到键盘之上。
+    // 读的是 `viewInsets`（键盘高度），**不是** SafeArea 的 padding。
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+      ),
+      child: const _ExercisePickerSheet(),
+    ),
   );
 }
 

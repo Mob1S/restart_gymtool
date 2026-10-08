@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../domain/format.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
+import '../../ui/widgets/fill_or_scroll.dart';
 import '../../ui/widgets/primary_button.dart';
 import 'breathing_dot.dart';
 
@@ -60,39 +61,43 @@ class _RestViewState extends State<RestView> {
   @override
   Widget build(BuildContext context) {
     final c = appColors(context);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // 呼吸点告诉用户「它真的在走」，而不是一个静止的 00:00
-        const BreathingDot(),
-        const SizedBox(height: AppSpacing.lg),
-        Text(
-          formatClock(_elapsedSeconds),
-          style: TextStyle(
-            fontSize: AppFontSize.clock,
-            fontWeight: FontWeight.w700,
-            color: c.textPrimary,
-            fontFeatures: tabularNums,
+    // 横屏（640×360）下这一列会比一屏高，实测溢出 31px —— 切掉的正好是
+    // 「开始第 N 组」那个按钮。装得下时布局与从前完全一致，见 FillOrScroll。
+    return FillOrScroll(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 呼吸点告诉用户「它真的在走」，而不是一个静止的 00:00
+          const BreathingDot(),
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            formatClock(_elapsedSeconds),
+            style: TextStyle(
+              fontSize: AppFontSize.clock,
+              fontWeight: FontWeight.w700,
+              color: c.textPrimary,
+              fontFeatures: tabularNums,
+            ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          '组间休息',
-          style: TextStyle(
-            fontSize: AppFontSize.label,
-            letterSpacing: AppTracking.unit,
-            color: c.textTertiary,
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            '组间休息',
+            style: TextStyle(
+              fontSize: AppFontSize.label,
+              letterSpacing: AppTracking.unit,
+              color: c.textTertiary,
+            ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.xxl),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
-          child: PrimaryButton(
-            label: '开始第 ${widget.nextSetNumber} 组',
-            onPressed: widget.onBeginNextSet,
+          const SizedBox(height: AppSpacing.xxl),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
+            child: PrimaryButton(
+              label: '开始第 ${widget.nextSetNumber} 组',
+              onPressed: widget.onBeginNextSet,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

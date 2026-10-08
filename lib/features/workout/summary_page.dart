@@ -95,8 +95,16 @@ class _SummaryPageState extends State<SummaryPage> {
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.screenH),
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // 三块统计用 **Wrap** 而不是 Row。
+          //
+          // 系统字号放大到 2 倍时，三个数字并排会挤出屏幕（实测 360×640
+          // 下 `RenderFlex overflowed by 156 pixels on the right`）。
+          // Wrap 在这一档会自动折成两行 —— **数字宁可换行，也不能被切掉**：
+          // 总容量正是要求用户拿笔手工核对的那个数。
+          // 正常字号下三块正好一行，观感与 Row + spaceBetween 一致。
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            runSpacing: AppSpacing.lg,
             children: [
               StatBlock(
                 label: '时长',

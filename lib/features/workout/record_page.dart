@@ -9,6 +9,7 @@ import '../../state/active_session_controller.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
 import '../../ui/widgets/empty_state.dart';
+import '../../ui/widgets/fill_or_scroll.dart';
 import '../../ui/widgets/primary_button.dart';
 import 'drag_number.dart';
 import 'exercise_picker.dart';
@@ -191,62 +192,66 @@ class _RecordPageState extends State<RecordPage> {
     final weight = _weight ?? pending?.weight ?? 20;
     final reps = _reps ?? pending?.reps ?? 8;
 
-    return Column(
-      children: [
-        const SizedBox(height: AppSpacing.lg),
+    // 窄屏 / 横屏下这一列会比一屏高（320×480 实测溢出 59px，切掉的正好是
+    // 底部那个「完成这组」）。装得下时布局与从前完全一致，见 FillOrScroll。
+    return FillOrScroll(
+      child: Column(
+        children: [
+          const SizedBox(height: AppSpacing.lg),
 
-        Text(
-          active.exerciseName,
-          style: TextStyle(
-            fontSize: AppFontSize.title,
-            fontWeight: FontWeight.w600,
-            color: sc.textPrimary,
+          Text(
+            active.exerciseName,
+            style: TextStyle(
+              fontSize: AppFontSize.title,
+              fontWeight: FontWeight.w600,
+              color: sc.textPrimary,
+            ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.xs),
 
-        // 「第 N / M 组」——旧项目这里踩过「组数只是右上角小灰字，不显眼」，
-        // 所以它现在是动作名正下方的一等信息
-        Text(
-          '第 ${completed + 1} / $total 组',
-          style: TextStyle(
-            fontSize: AppFontSize.caption,
-            color: sc.textSecondary,
-            fontFeatures: tabularNums,
+          // 「第 N / M 组」——旧项目这里踩过「组数只是右上角小灰字，不显眼」，
+          // 所以它现在是动作名正下方的一等信息
+          Text(
+            '第 ${completed + 1} / $total 组',
+            style: TextStyle(
+              fontSize: AppFontSize.caption,
+              color: sc.textSecondary,
+              fontFeatures: tabularNums,
+            ),
           ),
-        ),
 
-        const SizedBox(height: AppSpacing.lg),
-        _lastPerformanceLine(active, sc),
+          const SizedBox(height: AppSpacing.lg),
+          _lastPerformanceLine(active, sc),
 
-        const Spacer(),
+          const Spacer(),
 
-        DragNumber(
-          value: weight,
-          onChanged: (v) => setState(() => _weight = v),
-        ),
-
-        const SizedBox(height: AppSpacing.xl),
-        NumberStepper(
-          value: weight,
-          onChanged: (v) => setState(() => _weight = v),
-        ),
-
-        const SizedBox(height: AppSpacing.lg),
-        _repsRow(reps, sc),
-
-        const Spacer(),
-
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
-          child: PrimaryButton(
-            label: '✓ 完成这组',
-            // 没有待完成的组时置灰 —— 那正是「点了没反应」的假死状态
-            onPressed: pending == null ? null : () => _complete(c),
+          DragNumber(
+            value: weight,
+            onChanged: (v) => setState(() => _weight = v),
           ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-      ],
+
+          const SizedBox(height: AppSpacing.xl),
+          NumberStepper(
+            value: weight,
+            onChanged: (v) => setState(() => _weight = v),
+          ),
+
+          const SizedBox(height: AppSpacing.lg),
+          _repsRow(reps, sc),
+
+          const Spacer(),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
+            child: PrimaryButton(
+              label: '✓ 完成这组',
+              // 没有待完成的组时置灰 —— 那正是「点了没反应」的假死状态
+              onPressed: pending == null ? null : () => _complete(c),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+      ),
     );
   }
 
