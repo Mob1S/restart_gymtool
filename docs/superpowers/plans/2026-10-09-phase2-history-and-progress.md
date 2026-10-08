@@ -267,8 +267,12 @@ List<ExerciseProgressRow> buildProgressIndex(List<SetFact> facts);
 
 - **没练过的动作不出现**（调用方从 `exercise` 表拿名字，`buildProgressIndex` 只管有数据的）。
 - `recent` 取**最近** 12 个点，但**按时间升序**返回（画线要左旧右新）。
-- 同一动作的多个 `SetFact` 先按 `sessionId` 聚成 `SessionPoint`（**复用 Task 1 的
+- 同一动作的多个 `SetFact` 聚成 `SessionPoint`（**复用 Task 1 的
   `buildSessionPoints`，不重写**）。
+- **不必先按 `exerciseId` 过滤**：`buildSessionPoints` 的分组键就是
+  `(exerciseId, sessionId)`，传全量进去再按 `point.exerciseId` 挑即可。
+  （实施时改过一版：原计划分组键只有 `sessionId`，靠「调用方记得先过滤」
+  的注释把关 —— 那是一类**静默算错**，数字错了却不报错。见 Task 14 变异 #10。）
 
 **测试用例**
 
@@ -479,6 +483,7 @@ go_router 会优先匹配更长的那条；**写完要在 Chrome 上实际点一
 | 7 | 去掉 `s.finished_at IS NOT NULL` | `progress_repo_test` 用例 1、`session_summary_list_test` 用例 3 |
 | 8 | 总容量卡片「最高」→「最好」 | `phase2_pages_test` 用例 3、4 |
 | 9 | 去掉「估算 · 仅供参考」 | `phase2_pages_test` 用例 3 |
+| 10 | ~~分组键改回只有 `sessionId`~~ **已在实施时验过** | `progress_test` 用例 11（实测：2 个点变 1 个，`has length of <1>`）|
 
 > **一条永远绿的守卫等于没有守卫。** Phase 1 靠这条抓到过两条假绿
 > （拼音排序的断言、`rowid` 兜底的行序），代价已经付过一次。
