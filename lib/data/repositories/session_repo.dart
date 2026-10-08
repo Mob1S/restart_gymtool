@@ -234,3 +234,82 @@ Future<String?> findLastActiveSessionExerciseId(
   );
   return row?['id'] as String?;
 }
+
+/// 历史列表的一行：一场已结束训练 + 两个聚合数。
+///
+/// 组数与容量由 [listSessionSummaries] 的 SQL 一并算出，**不是**拿到训练后再
+/// 逐个回库补的 —— 那是 N+1，见那个函数上的说明。
+class SessionSummaryRow {
+  final WorkoutSession session;
+
+  /// 时长（秒）。口径与 Phase 1 总结页**同一个算法**：
+  /// `((finishedAt - startedAt) / 1000).round()`（`summary_page.dart`）。
+  /// 两处各算各的话，同一场训练在总结页与历史行上会显示不同的分钟数。
+  final int durationSeconds;
+
+  /// 已完成的组数。占位组（`is_completed = 0`）不算。
+  final int setCount;
+
+  /// 总容量 Σ(重量 × 次数)，口径同 `domain/metrics.dart` 的 `totalVolumeLoad`：
+  /// 只累加已完成的组。
+  final double volumeLoad;
+
+  const SessionSummaryRow({
+    required this.session,
+    required this.durationSeconds,
+    required this.setCount,
+    required this.volumeLoad,
+  });
+
+  factory SessionSummaryRow.fromMap(Map<String, Object?> m) {
+    final session = toSession(SessionRow.fromMap(m));
+    return SessionSummaryRow(
+      session: session,
+      // 查询只取已结束的训练，`finished_at` 必非空。这里用 `!` 是刻意的：
+      // 真取到 null 说明 WHERE 被改坏了，应当**当场抛**而不是静默算成 0 秒
+      // —— 数字悄悄写歪是这一层最难发现的一类错。
+      durationSeconds: ((session.finishedAt! - session.startedAt) / 1000)
+          .round(),
+      setCount: m['set_count'] as int,
+      // 不能写 `as double`：0 组时 COALESCE 给的是**整数** 0，FFI 后端原样
+      // 返回 int，`as double` 会抛。经 num 转一道，两种数字类型都收得住。
+      volumeLoad: (m['volume_load'] as num).toDouble(),
+    );
+  }
+}
+
+/// 历史列表：**一条聚合查询**，不是「先查训练、再逐个查组」。
+///
+/// 后者是 N+1：列表里 200 场就是 201 条 SQL，在手机上肉眼可见地卡
+/// （旧项目 sessionRepo 的注释写明过这一条，规格 §3.1 引它作为取数纪律）。
+/// 代价是这一条 SQL 同时承担过滤、聚合、排序三件事 —— 改它之前先读完下面几条。
+///
+/// **两个 `LEFT JOIN` 都不能改成 `JOIN`**：一个动作都没加就结束的训练（0 组）
+/// 必须仍然出现在历史里，显示「0 组 · 0 kg」。内连接会让它**凭空消失**，
+/// 而用户会读成「那场训练没记上」。
+///
+/// **`COALESCE(SUM(...), 0)` 不能省**：0 组时 `SUM` 返回 `NULL` 而不是 0，
+/// 去掉它界面会显示「null kg」（准确地说，是在 [SessionSummaryRow.fromMap]
+/// 的类型转换处抛异常）。
+///
+/// `rowid DESC` 兜底的理由同 [getActiveSession]：`started_at` 只有毫秒精度，
+/// 同毫秒的两场会完全并列，不兜底就按扫描顺序返回，语义反了。
+///
+/// SELECT 里带上 `s.note` / `s.template_id`（计划里只列了四列）：行里内嵌的
+/// 是完整的 [WorkoutSession]，缺列时 `SessionRow.fromMap` 会把它们**静默填
+/// null** —— 将来谁从这一行读 `templateId` 去推计划轮转，就会静默算错。
+Future<List<SessionSummaryRow>> listSessionSummaries(SqlExecutor exec) async {
+  final rows = await exec.all<Map<String, Object?>>(
+    '''SELECT s.id, s.name, s.started_at, s.finished_at, s.note, s.template_id,
+              COUNT(st.id)                          AS set_count,
+              COALESCE(SUM(st.weight * st.reps), 0) AS volume_load
+         FROM session s
+         LEFT JOIN session_exercise se ON se.session_id = s.id
+         LEFT JOIN set_entry st ON st.session_exercise_id = se.id
+                               AND st.is_completed = 1
+        WHERE s.finished_at IS NOT NULL
+        GROUP BY s.id
+        ORDER BY s.started_at DESC, s.rowid DESC''',
+  );
+  return rows.map(SessionSummaryRow.fromMap).toList();
+}
