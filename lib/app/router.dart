@@ -1,6 +1,8 @@
 import 'package:go_router/go_router.dart';
 
 import '../features/history/history_page.dart';
+import '../features/history/session_detail_page.dart';
+import '../features/progress/exercise_detail_page.dart';
 import '../features/progress/progress_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/workout/record_page.dart';
@@ -32,6 +34,22 @@ GoRouter buildRouter() => GoRouter(
     GoRoute(
       path: '/summary/:id',
       builder: (_, s) => SummaryPage(sessionId: s.pathParameters['id']!),
+    ),
+    // 历史详情与动作详情**也不在标签外壳里** —— 它们要占满全屏、带返回键。
+    //
+    // ⚠️ `/history/:id` 与上面 ShellRoute 里那条 `/history` **前缀相同**。
+    // 这不是靠读 go_router 的匹配规则推出来的结论 ——
+    // `test/app/router_test.dart` 里有一条真建 `buildRouter()`、
+    // 断言 `/history/abc` 解析到历史详情页（而不是被 `/history` 抢走）的用例。
+    // 改这张表之前先让它跑一遍。
+    GoRoute(
+      path: '/history/:id',
+      builder: (_, s) => SessionDetailPage(sessionId: s.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/progress/:exerciseId',
+      builder: (_, s) =>
+          ExerciseDetailPage(exerciseId: s.pathParameters['exerciseId']!),
     ),
   ],
 );

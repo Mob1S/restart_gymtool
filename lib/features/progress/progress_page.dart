@@ -100,9 +100,12 @@ class _ProgressRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = appColors(context);
     return AppCard(
-      // go 而不是 push：动作详情在标签外壳**外面**（占满全屏、带返回键），
-      // 由路由表决定它落在哪儿，这一层只说「去那里」
-      onTap: () => context.go('/progress/${row.exerciseId}'),
+      // **push 不是 go**：`go` 会把整个导航栈换成详情页那一层，于是详情页上
+      // **没有返回键** —— 用户点进一个动作就出不来了。这个坑只有真的从列表点
+      // 一次才看得见：把详情页单独 pump 起来（底下垫一个 home 当栈底）时，
+      // 返回键是有的，测试会绿。守它的是 `test/app/router_test.dart` 里
+      // 「从进步列表点进动作详情」那一条（**点的是真行**，不是直接 push）。
+      onTap: () => context.push('/progress/${row.exerciseId}'),
       child: Row(
         children: [
           Expanded(

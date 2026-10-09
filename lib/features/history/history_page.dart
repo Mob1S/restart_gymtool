@@ -97,9 +97,13 @@ class _HistoryRow extends StatelessWidget {
     final session = row.session;
 
     return AppCard(
-      // go 而不是 push：详情在标签外壳**外面**（占满全屏、带返回键），
-      // 由路由表决定它落在哪儿，这一层只说「去那里」
-      onTap: () => context.go('/history/${session.id}'),
+      // 必须用 **push 不是 go**：`go` 会把整个导航栈换成详情页那一层，
+      // 于是详情页上**没有返回键** —— 用户点进一条记录就出不来了。
+      // 这个坑只有真的从列表点一次才看得见：把详情页单独 pump 起来
+      // （底下垫一个 home 当栈底）时，返回键是有的，测试会绿。
+      // 守它的是 `test/app/router_test.dart` 里「从列表点进详情页」那一条
+      // —— 它**点的是真行**，所以换回 `go` 会让它红。
+      onTap: () => context.push('/history/${session.id}'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
