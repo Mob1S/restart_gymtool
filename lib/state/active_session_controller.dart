@@ -256,9 +256,25 @@ class ActiveSessionController extends ChangeNotifier {
     final current = session;
     if (current == null) return null;
 
+    // **丢掉**这段休息，不是把它结掉（`cancelRest` 而不是 `endRest`）。
+    //
+    // `completeCurrentSet` 给**每一组**都开了休息，所以刚做完最后一组时必然
+    // 有一段在进行 —— 它的时长是「做完最后一组到按下结束」的间隔，而这个
+    // 间隔**不可知**：用户可能在收杠铃，也可能已经揣兜里了。写成测量值就是
+    // 伪造：实测 `[300, 300, 3]` 会让屏幕上出现「平均歇了 3 分 21 秒」，
+    // 而用户真歇了 5 分 00 秒；还会把 200 秒那组从 `addWeight` 压成 `positive`。
+    //
+    // 这条与 [cancelRest] 的既有用途（休息跑太久，显然是忘了按开始下一组）
+    // 是同一条道理：**不是真实休息的时长，不该作为数据留下来**。
+    // 也与旧设计文档 §503「没有真实的组间休息数据，编一个平均值比留空更糟」
+    // 和 `rest_advice` 里「最后一组通常是 null」对齐。
+    //
+    // 用户若真的歇够了，会先按「开始下一组」——那一按把这段休息**结掉**
+    // （`beginNextSet` 走 `endRest`），值由用户确认过，那时 `endWorkout`
+    // 已经找不到进行中的休息，这一行不会碰它。
     final resting = _findAnyResting();
     if (resting != null) {
-      await endRest(_exec, resting.id, DateTime.now().millisecondsSinceEpoch);
+      await cancelRest(_exec, resting.id);
     }
 
     final finishedId = current.id;

@@ -103,7 +103,7 @@ void main() {
     expect(await getActiveSession(exec), isNull);
   });
 
-  test('endWorkout 时若正在休息，先把这段休息结掉', () async {
+  test('⭐ endWorkout 丢掉正在进行的那段休息，不把它写成 rest_seconds', () async {
     final c = await started();
     await c.completeCurrentSet(40, 8);
     final startedAt = DateTime.now().millisecondsSinceEpoch - 60000;
@@ -120,8 +120,47 @@ void main() {
       (await listSessions(exec, 1)).single.id,
     )).single.id;
     final set = (await listSets(exec, seId)).singleWhere((s) => s.isCompleted);
-    // 不收尾的话这一组永远是 NULL，总结页算不出平均休息
-    expect(set.restSeconds, closeTo(60, 2));
+
+    // 这一段是「做完最后一组到按下结束」的间隔，**不可知** ——
+    // 用户可能在收杠铃，也可能已经揣兜里了。写进库就是伪造：
+    // 实测 `[300, 300, 3]` 会让屏幕显示「平均歇了 3 分 21 秒」，
+    // 而真实休息是 5 分 00 秒；还会把 200 秒那组从 addWeight 压成 positive。
+    //
+    // ⚠️ 这一条以前断言的是 `closeTo(60, 2)`（把它结掉）。改成 `isNull`
+    // 是**产品口径的改动**，不是测试写错了 —— 理由见 `endWorkout` 的注释。
+    expect(set.restSeconds, isNull, reason: '末组那段休息不是真实的组间休息，必须留空而不是编一个数');
+    expect(
+      set.restStartedAt,
+      isNull,
+      reason: '光把 rest_seconds 留空还不够 —— rest_started_at 也要清掉',
+    );
+  });
+
+  test('⭐ 用户按过「开始下一组」再结束 → 那一段是用户确认过的，要留下', () async {
+    // 上面那条的反面。差别在于**那一按**：按下「开始下一组」等于用户声明
+    // 「我歇够了」，所以 `beginNextSet` 走 `endRest` 把真实时长写下来；
+    // 此后 `endWorkout` 找不到进行中的休息，不该去动它。
+    final c = await started();
+    await c.completeCurrentSet(40, 8);
+    await exec.run(
+      'UPDATE set_entry SET rest_started_at = ? WHERE is_completed = 1',
+      [DateTime.now().millisecondsSinceEpoch - 60000],
+    );
+    await c.resume();
+    await c.beginNextSet();
+
+    await c.endWorkout();
+
+    final seId = (await listSessionExercises(
+      exec,
+      (await listSessions(exec, 1)).single.id,
+    )).single.id;
+    final set = (await listSets(exec, seId)).singleWhere((s) => s.isCompleted);
+    expect(
+      set.restSeconds,
+      closeTo(60, 2),
+      reason: '用户按了「开始下一组」，这段休息是他确认过的，不许被丢掉',
+    );
   });
 
   test('store 里本来就没有训练时 endWorkout 返回 null', () async {
