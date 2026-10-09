@@ -57,6 +57,25 @@ class ChartLayout {
   });
 }
 
+/// `values` 里 null 的个数 —— 也就是「没有可用于换算的组」的场次数。
+///
+/// **单独拿出来，是因为有两处要用同一个定义。** [layoutChart] 把它填进
+/// [ChartLayout.gapCount] 供画线时跳过；动作详情页要用它写图下那句
+/// 「有 N 次训练没有可用于换算的组（次数 > 10）」。
+///
+/// 两处各写一遍 `.where((v) => v == null).length` 的话，
+/// 将来「没有可用于换算的组」的定义一变（多了一种不可换算的情形），
+/// 图上的缺口数与那句话里的数就会对不上 —— 而两边都不报错，
+/// 只是同一张图上写着两个不同的数。这与容量、时长是同一条纪律：
+/// **口径只有一份实现。**
+int countGaps(List<double?> values) {
+  var n = 0;
+  for (final v in values) {
+    if (v == null) n++;
+  }
+  return n;
+}
+
 /// 把 [values] 映射到 `width × height` 的画布上，一个下标一列。
 ///
 /// [values] 的每一项是**一场训练**（或一次测量），null 表示这一场没有值
@@ -82,17 +101,13 @@ ChartLayout layoutChart({
   required double height,
   double insetY = 12,
 }) {
-  var gapCount = 0;
   double? minValue;
   double? maxValue;
   int? highlightIndex;
 
   for (var i = 0; i < values.length; i++) {
     final v = values[i];
-    if (v == null) {
-      gapCount++;
-      continue;
-    }
+    if (v == null) continue;
     if (minValue == null || v < minValue) minValue = v;
     // 用**严格大于**：并列时 highlightIndex 停在更早的那个下标上
     if (maxValue == null || v > maxValue) {
@@ -129,6 +144,6 @@ ChartLayout layoutChart({
     highlightIndex: highlightIndex,
     minValue: min ?? 0,
     maxValue: max ?? 0,
-    gapCount: gapCount,
+    gapCount: countGaps(values),
   );
 }
