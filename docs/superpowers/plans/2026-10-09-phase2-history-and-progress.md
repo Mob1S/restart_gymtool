@@ -569,7 +569,7 @@ Flutter 版这一行走 `formatDuration`（`domain/format.dart`，有单测钉�
 | Chrome：`flutter build web` | ✅ **编译通过** | `√ Built build\web`（47.6s）；顺带通过了 wasm dry run |
 | Chrome：`flutter run -d chrome` 走通两条链路 | ⚠️ **未做** | 需要在浏览器里**真的点**；本机没有可驱动点击的东西，硬说「走通」就是编 |
 | 真机：`adb devices` | ⚠️ **空** | `List of devices attached` 后面一行都没有，没有设备可验收 |
-| 真机：APK 构建 | ✅ | `build\app\outputs\flutter-apk\app-release.apk`，64.5 MB，2026-10-09 08:27 |
+| 真机：APK 构建 | ✅ | `build\app\outputs\flutter-apk\app-release.apk`，64.5 MB，**2026-10-09 10:12**（在末组 rest_seconds 那个修复之后重打过一次；早先 08:27 那个包没有这个修复，别装错了） |
 | 真机：5 项验收 | ⚠️ **未做** | 无设备。**待用户插上手机后逐条跑，数字用手工核算对照屏幕** |
 
 **上面那三条 ⚠️ 不是「通过」。** 它们与旧项目最后一轮 12 项未做是同一种状态，
