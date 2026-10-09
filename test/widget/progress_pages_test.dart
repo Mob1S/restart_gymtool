@@ -62,9 +62,8 @@ void main() {
   }) async {
     late String exerciseId;
     await tester.runAsync(() async {
-      final exercise = (await listExercises(
-        exec,
-      )).firstWhere((e) => e.name == exerciseName);
+      final exercise = (await listExercises(exec))
+          .firstWhere((e) => e.name == exerciseName);
       exerciseId = exercise.id;
 
       final session = await createSession(exec, name: null);
@@ -438,9 +437,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('⭐ 动作详情：只练过一次 → 一个点不画线 + 「再练一次就能看到走势」', (
-    tester,
-  ) async {
+  testWidgets('⭐ 动作详情：只练过一次 → 一个点不画线 + 「再练一次就能看到走势」', (tester) async {
     final exec = await seededDb(tester);
     addTearDown(exec.close);
     final squatId = await seedSession(
@@ -461,9 +458,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('⭐ 动作详情：没练过的动作 / 不存在的 id 都「这个动作还没有记录」，不崩', (
-    tester,
-  ) async {
+  testWidgets('⭐ 动作详情：没练过的动作 / 不存在的 id 都「这个动作还没有记录」，不崩', (tester) async {
     final exec = await seededDb(tester);
     addTearDown(exec.close);
     // 动作库里真实存在、但一场都没练过的动作（深链着它的 id 进来）

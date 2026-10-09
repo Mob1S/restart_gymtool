@@ -448,22 +448,27 @@ go_router 会优先匹配更长的那条；**写完要在 Chrome 上实际点一
 
 ---
 
-## Task 13：界面断言
+## Task 13：界面断言 —— **已由 Task 9–12 各自的测试覆盖，不另建文件**
 
-**新建**：`test/widget/phase2_pages_test.dart`
+原计划要新建 `test/widget/phase2_pages_test.dart` 收这 7 条。实施时 Task 9–12
+的 subagent 把界面断言写在了**各自页面的测试文件里**（`history_pages_test.dart`
+6 条、`progress_pages_test.dart` 13 条），7 条逐一对得上：
 
-沿用 Phase 1 的 `settleReal`（假时钟推不动 sqlite 的真 I/O）与两个 provider 的写法
-（见 `test/widget/smoke_test.dart` 顶部注释）。
+| # | 断言 | 落在哪儿 |
+|---|---|---|
+| 1 | 历史行 `1 组 · 160 kg` | `history_pages_test` —— `1 分 30 秒 · 1 组 · 160 kg` |
+| 2 | 历史详情有返回键、总结页没有 | `history_pages_test`「历史详情有返回键；总结页刻意没有」 |
+| 3 | `最好` × 2 / `最高` × 1 / `估算 · 仅供参考` / `来自 60 kg × 10` | `progress_pages_test`「三张卡的措辞与数字」 |
+| 4 | `个人最好` findsNothing | `progress_pages_test`「全页找不到『个人最好』」（三张卡都翻到） |
+| 5 | 深链没练过的动作 → 一句空话，不崩 | `progress_pages_test`「没练过的动作 / 不存在的 id」 |
+| 6 | 只练过一次 → 「再练一次就能看到走势」 | `progress_pages_test` 同名用例 |
+| 7 | 空库 → 两个列表各自空态 | `history_pages_test` 空态 + `progress_pages_test` 空态 |
 
-| # | 断言 |
-|---|---|
-| 1 | ⭐ 历史行显示「1 组 · 160 kg」（1 组 × 20kg × 8 次 = 160） |
-| 2 | ⭐ 历史详情**有返回键**、总结页**没有** |
-| 3 | ⭐ 动作详情三张卡的文案：`最好` × 2、**`最高` × 1**、`估算 · 仅供参考`、`来自 60 kg × 10` |
-| 4 | ⭐ `find.textContaining('个人最好')` **`findsNothing`**（容量不是力量成绩） |
-| 5 | 深链没练过的动作 → 「这个动作还没有记录」，且 `takeException()` isNull |
-| 6 | 只练过一次 → 「再练一次就能看到走势」 |
-| 7 | 空库 → 历史与进步两个列表都显示各自空态 |
+再建一个 `phase2_pages_test.dart` 只会把这 19 条抄一遍 —— 而**同一件事两份断言**
+正是本期一直在消掉的东西（时长口径、gapCount 定义都是这么被合掉的）。
+规模也够：本期结束时 224 条（目标 ≥ 175）。
+
+Task 14 里指向 `phase2_pages_test` 的两条已改指 `progress_pages_test`。
 
 ---
 
@@ -472,22 +477,44 @@ go_router 会优先匹配更长的那条；**写完要在 Chrome 上实际点一
 逐条把实现改回错的写法，确认对应测试**变红**，再改回来。
 **每条都要记下红出来的实际信息**（哪条测试、什么期望/实际）。
 
-| # | 变异 | 应当变红 |
-|---|---|---|
-| 1 | `bestE1rm` 改成「取最重那组的 e1RM」 | `progress_test` 用例 2 |
-| 2 | `highlightIndex` 改成「最后一个点」 | `chart_geometry_test` 用例 4、5 |
-| 3 | y 轴改成从 0 起 | `chart_geometry_test` 用例 3 |
-| 4 | `min == max` 时不特判（除零） | `chart_geometry_test` 用例 2 |
-| 5 | 聚合查询 `LEFT JOIN` → `JOIN` | `session_summary_list_test` 用例 1 |
-| 6 | 去掉 `COALESCE` | `session_summary_list_test` 用例 2 |
-| 7 | 去掉 `s.finished_at IS NOT NULL` | `progress_repo_test` 用例 1、`session_summary_list_test` 用例 3 |
-| 8 | 总容量卡片「最高」→「最好」 | `phase2_pages_test` 用例 3、4 |
-| 9 | 去掉「估算 · 仅供参考」 | `phase2_pages_test` 用例 3 |
-| 10 | ~~分组键改回只有 `sessionId`~~ **已在实施时验过** | `progress_test` 用例 11（实测：2 个点变 1 个，`has length of <1>`）|
-| 11 | 去掉 `ORDER BY ... s.rowid ASC` | **⚠️ 验不出来** —— 实测本用例仍绿，FFI 的查询计划恰好就是插入序。见 Task 3 的说明 |
+下表的「实测」列是 2026-10-09 逐条跑出来的原文，**不是照着「应当变红」抄的** ——
+有三条的实测与预测**对不上**，都记在表里（#2、#4、#8）。
+
+| # | 变异 | 应当变红 | 实测 |
+|---|---|---|---|
+| 1 | `bestE1rm` 改成「取最重那组的 e1RM」 | `progress_test` 用例 2 | ✅ 只有用例 2：`Expected: a numeric value within <0.01> of <78.51>` / `Actual: <76.41542308039895>` |
+| 2 | `highlightIndex` 改成「最后一个点」 | `chart_geometry_test` 用例 4、5 | ✅ 用例 4、5、**9**：`Expected: <0>` / `Actual: <2>`（4）；`Expected: <1>` / `Actual: <2>`（5、9）。<br>⚠️ 先试的较窄版本（`>` 改 `>=`，并列取后）**只红用例 5** —— 用例 4 的最大值是唯一的，`>` 与 `>=` 在那里没有区别。写进表里的「最后一个点」才是对的 |
+| 3 | y 轴改成从 0 起 | `chart_geometry_test` 用例 3 | ✅ 用例 3、4、6：`Expected: <88.0>` / `Actual: <18.909090909090907>` |
+| 4 | `min == max` 时不特判（除零） | `chart_geometry_test` 用例 2 | ✅ 用例 2 **和用例 1**：`Expected: <50.0>` / `Actual: <NaN>`。<br>用例 1 是单元素 —— 单个元素也是 `min == max`，预测时漏了它 |
+| 5 | 聚合查询 `LEFT JOIN` → `JOIN` | `session_summary_list_test` 用例 1 | ✅ 用例 1、2、6、7：`Expected: an object with length of <1>` / `Actual: []` |
+| 6 | 去掉 `COALESCE` | `session_summary_list_test` 用例 2 | ✅ 用例 1、2：`type 'Null' is not a subtype of type 'num' in type cast`。<br>**不是数字错，是直接崩**（`SessionSummaryRow.fromMap` 的 cast 炸了）—— 比表里写的更严重 |
+| 7 | 去掉 `s.finished_at IS NOT NULL` | `progress_repo_test` 用例 1、`session_summary_list_test` 用例 3 | ✅ 两处都红，**与预测完全一致**：`progress_repo_test` `Expected: empty` / `Actual: [Instance of 'SetFact']`；`session_summary_list_test` 用例 3 |
+| 8 | 总容量卡片「最高」→「最好」 | `progress_pages_test` 用例 3、4 | ⚠️ **用例 3 红、用例 4 不红**：`Found 0 widgets with text "最高 · 11月13日 周一"`。<br>用例 4 找的是 `个人最好`，而这个变异只产生 `最好` —— 它们在表里被并成了一行，其实是**两条不同的红线**。另跑一版 `最高` → `个人最好`：**用例 3、4 都红**（`Found 1 widget with text containing 个人最好`）。两条各自都有守卫 |
+| 9 | 去掉「估算 · 仅供参考」 | `progress_pages_test` 用例 3 | ✅ 只有用例 3：`Found 0 widgets with text "估算 · 仅供参考"` |
+| 10 | ~~分组键改回只有 `sessionId`~~ **已在实施时验过** | `progress_test` 用例 11 | ✅ 实测：2 个点变 1 个，`has length of <1>` |
+| 11 | 去掉 `ORDER BY ... s.rowid ASC` | **⚠️ 验不出来** | ⚠️ 实测本用例仍绿，FFI 的查询计划恰好就是插入序。见 Task 3 的说明 |
+| 12 | 列表页 `context.push` → `context.go`（本期新发现的**真 bug**） | `test/app/router_test.dart` 点行那两条 | ✅ 两个文件各验一次，都红：`Expected: exactly one matching candidate` / `Actual: <Found 0 widgets with type "BackButton": []>`。<br>⚠️ 这两条断言**第一版是假的**：测试自己 `router.push`，把列表页换回 `go` 照样绿。改成「真的点那一行」才红得起来 —— 见下 |
 
 > **一条永远绿的守卫等于没有守卫。** Phase 1 靠这条抓到过两条假绿
 > （拼音排序的断言、`rowid` 兜底的行序），代价已经付过一次。
+
+### 第 12 条值得单独说一句
+
+它不是计划里列的变异，是**写路由测试时撞出来的真 bug**：列表页用的是
+`context.go`，而 `go` 把整个导航栈**替换**成详情页那一层，于是详情页上
+**没有返回键** —— 用户点进一条记录/一个动作就出不来了。不崩、不报错，
+只是退不出去。
+
+它躲过了两轮测试：
+
+1. 页面自己的测试把详情页 pump 在一个人造 `home` 之上 —— 那样返回键本来就有，
+   断言毫无意义；**只有真的从列表点一次**才看得见（计划在 Task 10 写过
+   「不要只看代码推理」，说的正是这个）。
+2. 补上的路由测试**第一版仍然是绿的**：它自己调 `router.push`，根本没走列表页的
+   `onTap`。把两处 `push` 换回 `go` 依然全绿 —— 又一条假守卫。
+
+修好之后的样子是**点真行**：`go('/history')` → `tap(find.text('推日'))` →
+断言有返回键 → `tap(BackButton)` → 断言回到列表。这样才真的锁住了那个 `onTap`。
 
 ---
 

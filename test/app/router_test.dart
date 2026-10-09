@@ -169,11 +169,7 @@ void main() {
       findsOneWidget,
       reason: '/progress/:exerciseId 应当落到动作详情页，且深链坏 id 不崩',
     );
-    expect(
-      find.byType(AppShell),
-      findsNothing,
-      reason: '动作详情的三张卡要占满全屏',
-    );
+    expect(find.byType(AppShell), findsNothing, reason: '动作详情的三张卡要占满全屏');
     expect(tester.takeException(), isNull);
   });
 
@@ -222,11 +218,7 @@ void main() {
     await finishAnimations(tester);
 
     expect(find.text('训练详情'), findsNothing, reason: '返回之后不该还停在详情页');
-    expect(
-      find.text('推日'),
-      findsOneWidget,
-      reason: '返回之后应当回到列表，那条记录还在',
-    );
+    expect(find.text('推日'), findsOneWidget, reason: '返回之后应当回到列表，那条记录还在');
   });
 
   testWidgets('⭐ 从进步列表点进动作详情：同样有返回键，能退回列表', (tester) async {
