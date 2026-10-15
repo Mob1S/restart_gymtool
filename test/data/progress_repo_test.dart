@@ -93,24 +93,20 @@ void main() {
     expect(bench.reps, 5);
   });
 
-  // ⚠️ 这条**不能**证明 `ORDER BY ... s.rowid ASC` 那个兜底有效。
-  //
-  // 实测（Phase 2 Task 3）：把 `s.rowid ASC` 从 ORDER BY 里删掉，**本用例仍然绿**
-  // —— FFI 在这个查询形状下由 `set_entry` 驱动扫描，返回序恰好就是插入序，
-  // 有没有那个子句看不出来。函数名不再声称它守着 rowid，因为它守的是
-  // 「顺序契约」这个**结果**，不是那个**子句**。
-  //
-  // 那个子句仍然要留着：顺序在 FFI 上恰好对，不代表在 Android 的查询计划下也对，
-  // 而 SQLite 在没有显式兜底时**不保证**任何顺序。代价是它只能靠代码审查守，
-  // 测试守不住 —— 如实记着，别以为这里绿了就代表兜底被验证过了。
-  //
-  // （产品路径上影响有限：facts 交给 buildSessionPoints，那里会自己按
-  // (startedAt, sessionId, exerciseId) 重排。这个子句保的是**直接读 facts 的调用方**。）
-  test('4. 同毫秒开的两场，返回顺序与建场次序一致（且两场确实并列）', () async {
+  // 组的插入顺序与训练的插入顺序相反，才不会碰巧按同一个顺序返回。
+  // 去掉 s.rowid 后，剩余 ORDER BY 的 st.rowid 会明确排成 [30, 20]，
+  // 因而本用例能确定地发现训练级兜底丢失，不依赖 SQLite 选择哪种扫描计划。
+  test('4. 同毫秒训练按训练 rowid 排序，即使组记录按相反顺序插入', () async {
     const sameMs = 1700000000000;
 
-    final first = await seedSession(exec, [('e1', 20, 8, true)]);
-    final second = await seedSession(exec, [('e1', 30, 5, true)]);
+    final first = await createSession(exec);
+    final second = await createSession(exec);
+    for (final (session, weight) in [(second, 30.0), (first, 20.0)]) {
+      final exercise = await addExerciseToSession(exec, session.id, 'e1');
+      final set = await addSet(exec, exercise.id, weight, 8);
+      await completeSet(exec, set.id, sameMs + 1000);
+      await finishSession(exec, session.id, sameMs + 2000);
+    }
     // 显式让两场并列 —— 不赌两次 DateTime.now() 恰好落在同一毫秒
     await exec.run('UPDATE session SET started_at = ?', [sameMs]);
 
@@ -126,7 +122,7 @@ void main() {
     final facts = await listAllCompletedSetFacts(exec);
     // 重量把两场区分开：顺序万一只是碰巧对了，这里也看得见
     expect(facts.map((f) => f.weight).toList(), [20, 30]);
-    expect(facts.map((f) => f.sessionId).toList(), [first, second]);
+    expect(facts.map((f) => f.sessionId).toList(), [first.id, second.id]);
   });
 
   test('5. 一场都没有的库返回空表，不是异常', () async {

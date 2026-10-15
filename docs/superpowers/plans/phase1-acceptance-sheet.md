@@ -1,5 +1,9 @@
 # Phase 1 真机验收作业单
 
+> **2026-10-15 已完成**：荣耀 Magic6 Pro（Android 16）逐项实测通过，详情见[最新验收记录](./2026-10-15-plan-completion.md)。当前交付使用 `build/app/outputs/flutter-apk/app-release.apk`，67,645,108 字节。下方 APK 大小与空白记录栏来自旧版作业单，仅供重复走查时参考。
+>
+> **从零建库采用独立包**：使用 README 的 `GYM_ACCEPTANCE_BUILD=1` 步骤，安装 `com.mobis.gym_tracker.acceptance` 后核对；本次没有对主应用执行 `pm clear`。常亮验收期间必须临时关闭 USB 强制常亮，才能判断应用自身的唤醒锁是否生效。
+
 > 给**你自己动手测**用。计划里 Task 22 的正式记录区在
 > [`2026-10-08-phase1-skeleton-and-recording.md`](./2026-10-08-phase1-skeleton-and-recording.md)，
 > 这份是把那 6 项拆成「拿手机就能照着走」的步骤。
@@ -23,7 +27,7 @@
 > 说一声 —— `android/app/src/main/AndroidManifest.xml` 里 `android:label` 一行，
 > 重新打包即可（Gradle 已缓存，比首次快得多）。
 
-### 装法（二选一）
+### 装法（二选一，以下为旧版 debug 包示例）
 
 **A. 数据线 + adb**（能顺便看日志，推荐）
 
@@ -46,7 +50,7 @@ adb shell svc power stayon usb        # USB 连接时不息屏
 adb shell uiautomator dump            # 需要核对当前前台窗口时用
 ```
 
-> ⚠️ **`svc power stayon usb` 不是可选的。** 手机自动锁屏后
+> 截图走查时建议使用 **`svc power stayon usb`**，但验证应用常亮前要先 `svc power stayon false`，完成后再恢复。手机自动锁屏后
 > `adb shell screencap` 会**返回上一帧而不是报错** —— 旧项目因此拿到过一张
 > 和半小时前**哈希完全相同**的「新」截图，并据此得出过错误结论。
 >
@@ -157,9 +161,8 @@ adb shell uiautomator dump            # 需要核对当前前台窗口时用
 
 **5b. 从零建库**
 
-1. 系统设置 → 应用 → `gym_tracker` → 存储 → **清除数据**
-   （或 `adb shell pm clear com.mobis.gym_tracker`）
-2. 重新打开 App
+1. 按 README 构建并安装独立 `.acceptance` 包，保留主应用数据库
+2. 打开独立包（使用 `GYM_ACCEPTANCE_PACKAGE` 指定目标）
 3. **期望**：不崩、不白屏，能正常进到首页
 4. 点「开始训练」→「＋ 添加动作」——
    **期望**：弹层里能看到动作列表，且**胸在最上面**（俯卧撑、器械推胸、上斜卧推…）
@@ -200,9 +203,7 @@ adb shell uiautomator dump            # 需要核对当前前台窗口时用
 
 ## 4. 测完之后
 
-把结果告诉我，我填进计划里 Task 22 那张表 ——
-**包括没通过的项**。那里面每一项现在都标着 `[ ] 未做`，
-测过一项就改一项，**不要留成旧项目那种「静悄悄躺着」的欠账**。
+重复走查时记录实际结果，**包括没通过的项**。2026-10-15 的逐项结果已回填到 Task 22；以下空白栏保留为下次走查模板。
 
 > 旧项目上一轮的 12 项真机验收**全部未做**（收尾机器 `adb devices` 是空的），
 > 然后在文档里躺了很久没人知道。这份作业单存在的一半理由就是不让它重演。
