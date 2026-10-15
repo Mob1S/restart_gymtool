@@ -2,6 +2,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'migrations.dart';
 import 'sql_executor.dart';
+import 'transaction_executor.dart';
 
 /// 基于 `sqflite_common_ffi` 的执行器 —— 用于**单元测试**（内存库）与桌面运行。
 ///
@@ -71,4 +72,8 @@ class FfiExecutor implements SqlExecutor {
   }
 
   Future<void> close() => _db.close();
+
+  @override
+  Future<T> transaction<T>(Future<T> Function(SqlExecutor tx) action) =>
+      _db.transaction((tx) => action(TransactionExecutor(tx)));
 }

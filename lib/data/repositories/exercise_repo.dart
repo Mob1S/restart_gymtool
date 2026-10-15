@@ -160,18 +160,27 @@ Future<Exercise> createCustomExercise(
 /// 判断依据是「表里一个动作都没有」，而不是「表里没有预置动作」——
 /// 用户如果自己先建了动作，就不该再塞一堆预置动作进去。
 Future<void> seedExercisesIfEmpty(SqlExecutor exec) async {
-  final row = await exec.first<Map<String, Object?>>(
-    'SELECT COUNT(*) AS count FROM exercise',
-  );
-  final count = (row?['count'] as int?) ?? 0;
-  if (count > 0) return;
-
-  final now = DateTime.now().millisecondsSinceEpoch;
-  for (final item in seedExercises) {
-    await exec.run(
-      '''INSERT INTO exercise (id, name, muscle_group, equipment, is_custom, is_archived, created_at)
-         VALUES (?, ?, ?, ?, 0, 0, ?)''',
-      [newId(), item.name, item.muscleGroup, item.equipment, now],
+  await exec.transaction((tx) async {
+    final initialized = await tx.first<Map<String, Object?>>(
+      "SELECT value FROM app_meta WHERE key = 'seed_initialized'",
     );
-  }
+    if (initialized?['value'] == '1') return;
+    final row = await tx.first<Map<String, Object?>>(
+      'SELECT COUNT(*) AS count FROM exercise',
+    );
+    final count = (row?['count'] as int?) ?? 0;
+    if (count == 0) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final item in seedExercises) {
+        await tx.run(
+          '''INSERT INTO exercise (id, name, muscle_group, equipment, is_custom, is_archived, created_at)
+         VALUES (?, ?, ?, ?, 0, 0, ?)''',
+          [newId(), item.name, item.muscleGroup, item.equipment, now],
+        );
+      }
+    }
+    await tx.run(
+      "INSERT INTO app_meta (key,value) VALUES ('seed_initialized','1') ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+    );
+  });
 }

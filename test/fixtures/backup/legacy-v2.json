@@ -1,0 +1,11 @@
+{
+  "format": "gym-tracker-backup", "version": 2, "schemaVersion": 3, "exportedAt": 1700000100000,
+  "data": {
+    "exercises": [{"id":"custom-e","name":"我的推胸","muscleGroup":"胸","equipment":"器械","isCustom":true,"isArchived":true,"createdAt":1700000000000}],
+    "templates": [{"id":"plan-p","name":"推日","position":0,"createdAt":1700000000000}],
+    "templateExercises": [{"id":"plan-e","templateId":"plan-p","exerciseId":"custom-e","position":0}],
+    "sessions": [{"id":"finished-s","name":"推日","startedAt":1700000000000,"finishedAt":1700000060000,"note":"保留备注","templateId":"plan-p"},{"id":"active-s","name":null,"startedAt":1700000000000,"finishedAt":null,"note":null,"templateId":null}],
+    "sessionExercises": [{"id":"se","sessionId":"finished-s","exerciseId":"custom-e","position":0,"note":null},{"id":"active-se","sessionId":"active-s","exerciseId":"custom-e","position":0,"note":null}],
+    "sets": [{"id":"done","sessionExerciseId":"se","position":0,"weight":50,"reps":8,"isCompleted":true,"restSeconds":75,"restStartedAt":null,"completedAt":1700000050000},{"id":"pending","sessionExerciseId":"active-se","position":0,"weight":20,"reps":8,"isCompleted":false,"restSeconds":null,"restStartedAt":1700000070000,"completedAt":null}]
+  }
+}

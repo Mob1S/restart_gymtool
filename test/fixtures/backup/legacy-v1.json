@@ -1,0 +1,9 @@
+{
+  "format":"gym-tracker-backup","version":1,"schemaVersion":1,"exportedAt":1700000100000,
+  "data": {
+    "exercises":[{"id":"e","name":"深蹲","muscleGroup":"腿","equipment":"杠铃","isCustom":false,"isArchived":false,"createdAt":1700000000000}],
+    "sessions":[{"id":"s","name":null,"startedAt":1700000000000,"finishedAt":1700000060000,"note":null}],
+    "sessionExercises":[{"id":"se","sessionId":"s","exerciseId":"e","position":0,"note":null}],
+    "sets":[{"id":"st","sessionExerciseId":"se","position":0,"weight":20,"reps":8,"isCompleted":true,"restSeconds":null,"restStartedAt":null,"completedAt":1700000050000}]
+  }
+}

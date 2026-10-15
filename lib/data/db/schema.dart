@@ -82,3 +82,20 @@ CREATE TABLE IF NOT EXISTS app_setting (
   value TEXT NOT NULL
 );
 ''';
+
+/// Added in v4 to preserve the plans carried by legacy v2 backups.
+const String createBackupPlansSql = '''
+CREATE TABLE IF NOT EXISTS split_template (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS template_exercise (
+  id TEXT PRIMARY KEY,
+  template_id TEXT NOT NULL REFERENCES split_template(id) ON DELETE CASCADE,
+  exercise_id TEXT NOT NULL REFERENCES exercise(id),
+  position INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_template_exercise_template ON template_exercise(template_id);
+''';

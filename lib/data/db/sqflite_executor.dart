@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart' as sqflite;
 
 import 'sql_executor.dart';
+import 'transaction_executor.dart';
 
 /// 生产用的执行器（Android / iOS）。
 ///
@@ -50,4 +51,8 @@ class SqfliteExecutor implements SqlExecutor {
   }
 
   Future<void> close() => _db.close();
+
+  @override
+  Future<T> transaction<T>(Future<T> Function(SqlExecutor tx) action) =>
+      _db.transaction((tx) => action(TransactionExecutor(tx)));
 }

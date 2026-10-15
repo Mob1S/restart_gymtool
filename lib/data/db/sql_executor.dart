@@ -16,6 +16,9 @@
 ///    - [first] 一行都没有时返回 `null`；[all] 没有命中时返回 `[]`（不是 `null`）
 /// 2. 它让仓储层完全不出现 sqflite 的类型 —— 将来加云同步时改动面不扩散
 abstract class SqlExecutor {
+  /// Run atomically; every operation in [action] must use its scoped executor.
+  Future<T> transaction<T>(Future<T> Function(SqlExecutor tx) action);
+
   /// 执行一条 SQL，不取返回行。
   ///
   /// [params] 省略或传空数组都表示「没有参数」，此时**必须能跑多语句**。
