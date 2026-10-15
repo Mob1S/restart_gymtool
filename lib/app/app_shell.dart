@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+
+import '../state/backup_controller.dart';
 
 import '../ui/theme.dart';
 
@@ -14,6 +17,7 @@ class AppShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = appColors(context);
     final location = GoRouterState.of(context).uri.path;
+    final revision = context.watch<BackupController?>()?.revision ?? 0;
     final index = switch (location) {
       '/history' => 1,
       '/progress' => 2,
@@ -22,7 +26,9 @@ class AppShell extends StatelessWidget {
     };
 
     return Scaffold(
-      body: SafeArea(child: child),
+      body: SafeArea(
+        child: KeyedSubtree(key: ValueKey((location, revision)), child: child),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         backgroundColor: c.surface,

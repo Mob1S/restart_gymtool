@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../data/db/database.dart';
 import '../data/db/sql_executor.dart';
+import '../data/files/backup_file_store.dart';
 import '../data/repositories/exercise_repo.dart';
 import '../data/repositories/settings_repo.dart';
 import '../state/active_session_controller.dart';
 import '../state/theme_controller.dart';
+import '../state/backup_controller.dart';
 import '../ui/theme.dart';
 import '../ui/tokens.dart';
 import 'router.dart';
@@ -17,7 +19,9 @@ import 'router.dart';
 /// **顺序不可反**：打开库 → 跑迁移 → 播种 → 读主题偏好 → 才放行子树。
 /// 最后一条见规格 §6.5：偏好读出来之前不放行子树，否则每次启动都会闪一帧。
 class AppBootstrap extends StatefulWidget {
-  const AppBootstrap({super.key});
+  final Future<SqlExecutor> Function()? openDatabase;
+  final BackupFileStore? backupFiles;
+  const AppBootstrap({super.key, this.openDatabase, this.backupFiles});
 
   @override
   State<AppBootstrap> createState() => _AppBootstrapState();
@@ -27,6 +31,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
   SqlExecutor? _exec;
   ActiveSessionController? _session;
   ThemeController? _theme;
+  BackupController? _backup;
   Object? _error;
 
   /// **router 只建一次。** 写在 `build()` 里的话每次重建都会新建一个
@@ -41,17 +46,30 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
   Future<void> _boot() async {
     try {
-      final exec = await openAppDatabase();
+      final exec = await (widget.openDatabase ?? openAppDatabase)();
       await seedExercisesIfEmpty(exec);
 
       final theme = ThemeController(exec);
       await theme.load(); // 不放行子树直到它完成 —— 否则每次启动闪一帧
 
+      final session = ActiveSessionController(exec);
+      final backup = BackupController(
+        exec: exec,
+        files: widget.backupFiles ?? PlatformBackupFileStore(),
+        onRestored: () async {
+          session.reset();
+          await session.resume();
+          await theme.load();
+          _router.go('/');
+        },
+      );
+
       if (!mounted) return;
       setState(() {
         _exec = exec;
-        _session = ActiveSessionController(exec);
+        _session = session;
         _theme = theme;
+        _backup = backup;
       });
     } catch (e) {
       if (mounted) setState(() => _error = e);
@@ -89,10 +107,20 @@ class _AppBootstrapState extends State<AppBootstrap> {
         Provider<SqlExecutor>.value(value: exec),
         ChangeNotifierProvider<ActiveSessionController>.value(value: session),
         ChangeNotifierProvider<ThemeController>.value(value: theme),
+        ChangeNotifierProvider<BackupController>.value(value: _backup!),
       ],
       // 在 Provider 之下读主题，所以这一层必须是独立 widget
       child: _ThemedApp(router: _router),
     );
+  }
+
+  @override
+  void dispose() {
+    _backup?.dispose();
+    _session?.dispose();
+    _theme?.dispose();
+    _router.dispose();
+    super.dispose();
   }
 }
 

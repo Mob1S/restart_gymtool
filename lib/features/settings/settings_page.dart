@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../data/repositories/settings_repo.dart';
 import '../../state/theme_controller.dart';
+import '../../state/backup_controller.dart';
+import 'backup_section.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
 import '../../ui/widgets/app_card.dart';
@@ -15,6 +17,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = appColors(context);
     final theme = context.watch<ThemeController>();
+    final backup = context.watch<BackupController?>();
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
@@ -66,6 +69,11 @@ class SettingsPage extends StatelessWidget {
             ],
           ),
         ),
+        if (backup != null) ...[
+          const SizedBox(height: AppSpacing.xl),
+          BackupSection(controller: backup),
+          const SizedBox(height: AppSpacing.xl),
+        ],
       ],
     );
   }
