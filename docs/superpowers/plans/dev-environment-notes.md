@@ -1,5 +1,11 @@
 # 开发环境笔记（Task 0 产出）
 
+> **2026-10-16 Phase 3A**：file_picker 13.1.0 与现有 AGP 9.1.0 的 Web、Android debug / release 实际编译均通过；Web 保存返回 null 表示请求下载，必须与原生取消区别处理。测试 304 条通过，浏览器备份往返 6 项和训练回归 7 项通过。默认 APK 与独立包名已用 aapt 验证，见[执行结果](./2026-10-16-phase3a-execution.md)。本轮 ADB 默认 / LIBUSB 均未发现设备，未执行安装或真机文件验收。
+
+> **2026-10-15 真机连接补记**：荣耀 Magic6 Pro 的 `ADB Interface` 使用 Microsoft `WINUSB / winusb.inf`，状态正常，但 ADB 37.0.1 默认 `LIBADBUSB` 后端的设备列表为空。停止现有服务、仅为当前进程设置 `$env:ADB_LIBUSB = '1'`、再 `adb start-server`，`adb server-status` 显示 `LIBUSB`，随后成功枚举手机。手机端允许 USB 调试后状态变为 `device`。未安装或更换系统驱动；服务重启后如又看不到设备，复用这一进程级设置。首次安装被手机拒绝，用户解锁后按要求重试成功。
+
+> **同日补充**：手机包含其他用户（user 100），默认安装临时包曾失败，`pm list packages` 也报跨用户 `SecurityException`；明确 `adb install --user 0 -r ...` 后安装成功。首次建库使用独立 `.acceptance` 包，完成后已卸载。Android SQLite 自动创建 `android_metadata`，应用表核对需排除该系统表。Node 真机驱动使用 Node 24 的内置 `node:sqlite`；PowerShell 5.1 执行含中文的 `.ps1` 时需 UTF-8 BOM。
+
 > 这份笔记是后续所有 Task 的排障依据。记录的是**这台机器上实测到的**事实，
 > 不是对旧文档结论的复述 —— 旧文档的三条风险逐条实测过，见 §4。
 

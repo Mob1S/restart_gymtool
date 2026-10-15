@@ -1,17 +1,93 @@
-# gym_tracker
+# 健身记录 · gym_tracker
 
-A new Flutter project.
+Flutter 本地健身记录工具：按组记录重量和次数、正计时休息、恢复未结束的训练、查看训练历史与动作走势。数据写入设备 SQLite；Web 预览使用 SQLite wasm 和 IndexedDB，与手机数据隔离。
 
-## Getting Started
+## 当前范围
 
-This project is a starting point for a Flutter application.
+- Phase 1：训练记录、动作选择、训练恢复、训练总结、主题三态。
+- Phase 2：历史列表与详情、动作进步列表、最大重量 / 估算 1RM / 总容量三张走势卡。
+- Phase 3A：JSON 备份恢复已接入设置页，支持旧 v1 / v2、预览确认、事务恢复与即时刷新；Web 真实文件往返通过，Android 真机文件验收待设备连接。
+- Phase 3B：CSV 导入与手动补记；Phase 4：分化计划界面、轮转与删除，属于后续范围。计划存储表已为旧备份兼容提前到 Phase 3A。
 
-A few resources to get you started if this is your first Flutter project:
+开发栈：Flutter 3.47.6 / Dart 3.13.5。2026-10-15：Phase 1、Phase 2 已完成；静态检查、225 条测试、7 项浏览器走查及荣耀 Magic6 Pro 真机验收均通过。结果与证据见[完成度复核](docs/superpowers/plans/2026-10-15-plan-completion.md)。
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+2026-10-16：Phase 3A 格式与静态检查通过、**304 条测试全绿**、8 项变异守卫通过；备份浏览器验收 6/6、原训练浏览器回归 7/7。Android debug / release 与独立验收包均构建成功，真机 A1–A9 尚未执行。完整证据与 APK 哈希见[本轮执行结果](docs/superpowers/plans/2026-10-16-phase3a-execution.md)；接续见[当前状态交接](docs/superpowers/plans/2026-10-15-current-state.md)和[详细实施计划](docs/superpowers/plans/2026-10-15-phase3a-backup-and-restore.md)。
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 备份与恢复
+
+设置 → 数据备份 →「导出备份」保存 JSON；「从备份恢复」选择文件并核对预览后，点击「替换并恢复」。恢复会替换本机训练、动作和计划数据；有偏好字段时也替换偏好。建议先导出本机数据。取消不写库，坏文件在写入前拒绝，写入失败整批回滚。
+
+单份文件上限 20 MiB、总记录上限 100,000。保留活动训练、未完成组、归档动作、计划与原始休息值。Web 显示「已请求下载备份」，请到浏览器下载记录确认文件。
+
+## 开发与检查（Windows PowerShell）
+
+本机 SDK 和缓存放在 `.tooling/`；每个 shell 先加载环境脚本。若 PowerShell 禁止执行脚本，可先启动仅当前进程放行的 shell：`powershell -NoProfile -ExecutionPolicy Bypass`。
+
+```powershell
+. .\scripts\env.ps1
+flutter pub get --offline --enforce-lockfile
+flutter analyze
+flutter test --reporter expanded
+flutter run -d chrome
+```
+
+首次配置、缓存、Android 工具链与已知环境问题见[环境笔记](docs/superpowers/plans/dev-environment-notes.md)。首次拉取依赖时省略 `--offline`。
+
+## 浏览器走查
+
+需要 Node.js 22+ 和 Chrome；不需要额外安装 npm 包。脚本使用独立浏览器 profile，从空库操作真实页面，保存每一步截图、语义树及最终结果，失败时返回非零退出码。
+
+```powershell
+. .\scripts\env.ps1
+flutter build web --no-pub
+node scripts/browser_smoke.mjs
+node scripts/browser_backup_smoke.mjs
+```
+
+证据位于 `build/acceptance/browser-*/` 和 `build/acceptance/browser-backup-*/`。备份驱动从 UI 下载真实文件，在另一隔离 origin 上传并逐字段比对，覆盖取消、坏文件、旧格式、空库与重启持久化。Chrome 路径可通过 `CHROME_EXECUTABLE` 环境变量指定。Android 原生文件界面仍需真机验收。
+
+## Android
+
+```powershell
+. .\scripts\env.ps1
+flutter build apk --release --no-pub
+adb devices -l
+adb install -r build\app\outputs\flutter-apk\app-release.apk
+adb shell am start -n com.mobis.gym_tracker/.MainActivity
+```
+
+应用包名为 `com.mobis.gym_tracker`。用 `install -r` 更新时保留已有训练数据。
+
+真机取证脚本需要 Node.js 24+，提供点击、滑动、截图、强杀重启、熄屏计时、常亮和震动记录检查。它不会安装 APK 或清空数据。多个设备时设置 `ANDROID_SERIAL`；截图前需解锁并让应用处于前台。
+
+```powershell
+node scripts/android_acceptance.mjs snapshot home
+node scripts/android_acceptance.mjs tap 历史
+node scripts/android_acceptance.mjs snapshot history
+```
+
+如需验证从零建库，可构建独立验收包，避免清除主应用数据。debug 变体支持 `run-as` 只读取出新库核对表、52 个动作和 schema 版本。
+
+```powershell
+$env:GYM_ACCEPTANCE_BUILD = '1'
+flutter build apk --debug --no-pub
+adb install --user 0 -r build\app\outputs\flutter-apk\app-debug.apk
+$env:GYM_ACCEPTANCE_PACKAGE = 'com.mobis.gym_tracker.acceptance'
+node scripts/android_acceptance.mjs start
+node scripts/android_acceptance.mjs fresh-database
+adb uninstall --user 0 com.mobis.gym_tracker.acceptance
+Remove-Item Env:GYM_ACCEPTANCE_BUILD, Env:GYM_ACCEPTANCE_PACKAGE
+flutter build apk --debug --no-pub
+```
+
+`GYM_ACCEPTANCE_BUILD=1` 仅追加 `.acceptance` 包名后缀；不设置时产物为主应用。独立包验证结束后重建默认 debug，避免误用同名 APK。更多步骤见[真机作业单](docs/superpowers/plans/phase1-acceptance-sheet.md)。
+
+## 计划与验收
+
+- [Phase 1 规格](docs/superpowers/specs/2026-10-08-flutter-gym-tracker-design.md)与[实施计划](docs/superpowers/plans/2026-10-08-phase1-skeleton-and-recording.md)
+- [Phase 2 规格](docs/superpowers/specs/2026-10-09-flutter-gym-tracker-phase2-design.md)与[实施计划](docs/superpowers/plans/2026-10-09-phase2-history-and-progress.md)
+- [Phase 1 真机验收作业单](docs/superpowers/plans/phase1-acceptance-sheet.md)
+- [2026-10-15 完成度复核与收尾](docs/superpowers/plans/2026-10-15-plan-completion.md)
+- [当前状态与接续说明](docs/superpowers/plans/2026-10-15-current-state.md)
+- [Phase 3A 已确认设计](docs/superpowers/specs/2026-10-15-flutter-gym-tracker-phase3a-design.md)与[详细实施计划](docs/superpowers/plans/2026-10-15-phase3a-backup-and-restore.md)
+- [2026-10-16 Phase 3A 执行结果与待验事项](docs/superpowers/plans/2026-10-16-phase3a-execution.md)
