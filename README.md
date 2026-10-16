@@ -36,6 +36,8 @@ Flutter 本地健身记录工具：按组记录重量和次数、正计时休息
 
 图标已按用户反馈改为橙色哑铃配水平直杆，去除中央对勾；Android 与 Web 同步。最新安装包、裁切预览和复验结果见 [图标与复验记录](docs/superpowers/plans/2026-10-16-icon-and-retest.md)。
 
+随后真机已验证独立包启动、v4 新库、真实文件导出、旧 v2 逐字段恢复、取消预览不改库及旧计划 / 归档动作显示。ADB 在验收中途断开，完整矩阵与桌面图标检查尚未完成；用户暂不方便操作手机，保留断点。证据与接续见 [Android 真机验收记录](docs/superpowers/plans/2026-10-16-android-device-acceptance.md)。主应用训练数据未改动。
+
 ## 开发与检查（Windows PowerShell）
 
 本机 SDK 和缓存放在 `.tooling/`；每个 shell 先加载环境脚本。若 PowerShell 禁止执行脚本，可先启动仅当前进程放行的 shell：`powershell -NoProfile -ExecutionPolicy Bypass`。
@@ -68,6 +70,10 @@ node scripts/import_plans_mutation_check.mjs
 
 ## Android
 
+开发阶段约定（2026-10-16 用户明确）：今后只生成主应用包并覆盖更新，在主包里新增、补记和删除测试记录，不再单独打验收包。日常测试通过界面清理记录；整库恢复是独立操作，会替换动作库、训练与计划。
+
+「推日 / 我的推胸」来自此前独立包中的兼容性样例。已复核正常 52 动作库在计划新建、编辑、开训、删除后逐字段不变，并补足整库恢复的动作数量与替换说明；完整 337 条测试通过。结果及最新主包见 [本轮复核记录](docs/superpowers/plans/2026-10-16-plan-start-and-test-isolation.md)。
+
 ```powershell
 . .\scripts\env.ps1
 flutter build apk --release --no-pub
@@ -86,7 +92,7 @@ node scripts/android_acceptance.mjs tap 历史
 node scripts/android_acceptance.mjs snapshot history
 ```
 
-如需验证从零建库，可构建独立验收包，避免清除主应用数据。debug 变体支持 `run-as` 只读取出新库核对表、52 个动作和 schema 版本。
+下方独立验收包命令仅保留历史技术参考，已不再是当前交付和验收流程。debug 变体支持 `run-as` 只读取出数据库核对表、52 个动作和 schema 版本。
 
 ```powershell
 $env:GYM_ACCEPTANCE_BUILD = '1'

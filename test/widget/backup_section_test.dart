@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gym_tracker/app/providers.dart';
 import 'package:gym_tracker/data/db/ffi_executor.dart';
 import 'package:gym_tracker/data/repositories/backup_repo.dart';
+import 'package:gym_tracker/data/repositories/exercise_repo.dart';
 import 'package:gym_tracker/data/repositories/settings_repo.dart';
 import 'package:gym_tracker/domain/backup_codec.dart';
 import 'package:gym_tracker/domain/backup.dart';
@@ -79,6 +80,32 @@ void main() {
     expect(decodeBackup(files.savedBytes!).schemaVersion, 4);
     expect(find.text('备份已保存'), findsOneWidget);
   });
+
+  testWidgets(
+    'restore explains replacement of 52 library actions with the one-action fixture',
+    (tester) async {
+      await tester.runAsync(() => seedExercisesIfEmpty(exec));
+      files.useFixture();
+      await pumpSection(tester);
+      await tap(tester, '从备份恢复');
+      expect(find.text('动作库：本机 52 个 → 备份 1 个'), findsOneWidget);
+      expect(find.text('训练计划：本机 0 个 → 备份 1 个'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.textContaining('动作库、训练记录和训练计划'),
+        ),
+        findsOneWidget,
+      );
+      await tap(tester, '取消');
+      await tester.runAsync(() async {
+        expect(
+          (await exportBackup(exec, exportedAt: 0)).rows('exercises'),
+          hasLength(52),
+        );
+      });
+    },
+  );
 
   testWidgets(
     'preview shows source/local counts, plans, active warning; cancel never writes',

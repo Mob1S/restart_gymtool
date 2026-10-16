@@ -44,14 +44,16 @@
 
 ## 当前安装包
 
+以下为图标更新阶段的历史构建信息。同名产物在后续计划开训反馈复核后已重建；当前安装包与哈希以 [最新主包复核记录](./2026-10-16-plan-start-and-test-isolation.md) 为准。
+
 - 发布包：`build/app/outputs/flutter-apk/app-release.apk`，69,437,977 字节。
 - SHA-256：`51EF7623C760D2D9BAE6ED04AE9F91B632AD2081EB0297E2FEE370629668514A`。
-- debug 包：`build/app/outputs/flutter-apk/app-debug.apk`，208,621,330 字节；SHA-256 `5B24B7F72BDB768F43A278E6C10C55364653578C9A9FCC5DA2B646226DC97332`。
+- debug 包：`build/app/outputs/flutter-apk/app-debug.apk`。12:21 构建为 208,621,330 字节、SHA-256 `5B24B7F72BDB768F43A278E6C10C55364653578C9A9FCC5DA2B646226DC97332`；后续独立包真机验收后已重建默认 debug，当前为 175,084,193 字节、SHA-256 `98A97C4E820B5EE1DB21E19843A36116771E6016456605CE0AF258AA2F8B839F`。
 - 两包包名均为 `com.mobis.gym_tracker`，versionCode 1，versionName 1.0.0，compileSdk 36；显示名称「健身记录」。
 - 最终透明源图 SHA-256：`681B3AD43F10C0AF9461F7136E34D8D727BCA3B9CE7682566A9A237EC119FD99`。
 
 ## 接续
 
-本轮 ADB 检查均未发现设备；连接并允许 USB 调试后才能继续 Android 原生桌面 / 主题图标显示、系统文件选择与 Phase 3A / 3B / 4 真机矩阵。不能用构建成功或浏览器结果代替真机通过。使用独立 `.acceptance` 包完成有数据替换 / 删除的场景；不清空主应用训练。
+12:21 图标本机复验时 ADB 未发现设备。后续手机连接后已完成部分原生验收，随后 USB 调试连接中断；实际通过项与断点见 [真机验收记录](./2026-10-16-android-device-acceptance.md)。Android 桌面 / 主题图标、其余系统文件选择与 Phase 3A / 3B / 4 真机矩阵仍待接续。不能用构建成功或浏览器结果代替真机通过。使用独立 `.acceptance` 包完成有数据替换 / 删除的场景；不清空主应用训练。
 
 本轮没有新增 Flutter 依赖，schema v4 / backup v2 保持。用户已有 `.claude/settings.local.json` 与 `.tmp/` 排除提交，未推送远程。

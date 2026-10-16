@@ -60,6 +60,17 @@ class _BackupPreviewDialogState extends State<BackupPreviewDialog> {
               ),
               Text('计划：${incoming.rows('templates').length} 个'),
               const SizedBox(height: 16),
+              Text(
+                '动作库：本机 ${current.rows('exercises').length} 个 → 备份 ${incoming.rows('exercises').length} 个',
+              ),
+              Text(
+                '训练计划：本机 ${current.rows('templates').length} 个 → 备份 ${incoming.rows('templates').length} 个',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '这是整库恢复，会替换本机的动作库、训练记录和训练计划；备份含偏好时也会替换偏好。新建或编辑计划请使用「训练计划」。',
+              ),
+              const SizedBox(height: 12),
               Text('将用备份中的 $count 场训练替换本机的 $localCount 场训练。建议先导出当前数据。'),
               if (current.activeSessions > 0)
                 const Padding(
