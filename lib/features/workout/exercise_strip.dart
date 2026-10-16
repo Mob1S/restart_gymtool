@@ -54,7 +54,12 @@ class ExerciseStrip extends StatelessWidget {
                 borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
                 border: Border.all(color: c.border),
               ),
-              child: Icon(Icons.add, size: 20, color: c.accent),
+              child: Icon(
+                Icons.add,
+                size: 20,
+                color: c.accent,
+                semanticLabel: '添加动作',
+              ),
             ),
           ),
         ],

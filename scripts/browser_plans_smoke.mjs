@@ -16,8 +16,8 @@ export async function run(h) {
     // Flutter's editable semantics node does not expose the painted label.
     await h.clickAt(100,96);await type(name);
     for(let i=0;i<repeat;i++){
-      await clickText('添加动作',true);await h.until(()=>h.has('胸'),'exercise picker data ready');
-      await type('深蹲');await clickText('深蹲');
+      await clickText('添加动作',true);await clickText('全部',true);await h.until(()=>h.has('胸'),'exercise picker data ready');
+      await h.clickAt(100,166);await type('深蹲');await clickText('深蹲');await clickText('添加 1 个动作',true);
     }
     await clickText('保存',true);await expectText(name);
   }

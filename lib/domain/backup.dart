@@ -1,5 +1,5 @@
 const backupFormat = 'gym-tracker-backup';
-const backupVersion = 2;
+const backupVersion = 3;
 const maxBackupBytes = 20 * 1024 * 1024;
 const maxBackupRecords = 100000;
 const maxBackupTimestamp = 8640000000000000;
@@ -99,6 +99,12 @@ const _fields = <String, Map<String, _Field>>{
     'position': _Field.integer,
   },
   'settings': {'key': _Field.id, 'value': _Field.text},
+  'exercisePreferences': {
+    'exerciseId': _Field.id,
+    'weightStepMilli': _Field.integer,
+    'isFavorite': _Field.boolean,
+    'equipmentNote': _Field.text,
+  },
 };
 
 Never _fail(String path, String reason) =>
@@ -158,10 +164,12 @@ BackupFile validateBackup(Object? input) {
   if (root['format'] != backupFormat) _fail('format', '不是本应用的备份文件');
   final version = root['version'];
   if (version is! int || version < 1 || version > backupVersion) {
-    _fail('version', '不受支持，请使用格式 1 / 2 的备份；新版本文件请先升级应用');
+    _fail('version', '不受支持，请使用格式 1 / 2 / 3 的备份；新版本文件请先升级应用');
   }
   final schema = root['schemaVersion'];
-  if (schema is! int || schema < 1 || schema > 4) {
+  if (schema is! int ||
+      schema < 1 ||
+      (version == 3 ? schema != 5 : schema > 4)) {
     _fail('schemaVersion', '不受支持，请先升级应用');
   }
   if (!root.containsKey('exportedAt')) _fail('exportedAt', '缺少字段');
@@ -174,6 +182,7 @@ BackupFile validateBackup(Object? input) {
   for (final table in _fields.entries) {
     final name = table.key;
     if (name == 'settings' && !raw.containsKey(name)) continue;
+    if (name == 'exercisePreferences' && version < 3) continue;
     final Object? source =
         version == 1 &&
             (name == 'templates' || name == 'templateExercises') &&
@@ -210,7 +219,20 @@ BackupFile validateBackup(Object? input) {
           '$path 的 ${field.key}',
         );
       }
-      final id = row[name == 'settings' ? 'key' : 'id'] as String;
+      final key = name == 'settings'
+          ? 'key'
+          : name == 'exercisePreferences'
+          ? 'exerciseId'
+          : 'id';
+      final id = row[key] as String;
+      if (name == 'exercisePreferences') {
+        if (![500, 1000, 1250, 2500, 5000].contains(row['weightStepMilli'])) {
+          _fail(path, '调重幅度无效');
+        }
+        if ((row['equipmentNote'] as String).runes.length > 500) {
+          _fail(path, '器械备忘最多 500 个字符');
+        }
+      }
       if (!seen.add(id)) {
         _fail(path, '包含重复 ${name == 'settings' ? 'key' : 'id'}：$id');
       }
@@ -235,6 +257,9 @@ BackupFile validateBackup(Object? input) {
     }
   }
 
+  if (version == 3) {
+    references('exercisePreferences', 'exerciseId', 'exercises');
+  }
   references('sessionExercises', 'sessionId', 'sessions');
   references('sessionExercises', 'exerciseId', 'exercises');
   references('sets', 'sessionExerciseId', 'sessionExercises');

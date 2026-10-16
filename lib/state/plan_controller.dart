@@ -81,9 +81,11 @@ class PlanController extends ChangeNotifier {
     if (d != null) _edit(name, d.exerciseIds);
   }
 
-  void addExercise(String id) {
-    final d = draft;
-    if (d != null) _edit(d.name, [...d.exerciseIds, id]);
+  void addExercise(String id) => addExercises([id]);
+  void addExercises(List<String> exerciseIds) {
+    final current = draft;
+    if (_disposed || busy || current == null || exerciseIds.isEmpty) return;
+    _edit(current.name, [...current.exerciseIds, ...exerciseIds]);
   }
 
   void removeDraftItem(int index) {

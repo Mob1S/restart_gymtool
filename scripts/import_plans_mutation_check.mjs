@@ -16,7 +16,7 @@ const cases=[
   ['plan-detach','lib/data/repositories/template_repo.dart',"'UPDATE session SET template_id=NULL WHERE template_id=?'","'UPDATE session SET name=name WHERE template_id=?'",'test/data/plans_and_records_test.dart'],
   ['keep-completed','lib/data/repositories/record_management_repo.dart','WHERE session_exercise_id=? AND is_completed=0','WHERE session_exercise_id=? AND is_completed=1','test/state/remove_exercise_test.dart'],
   ['last-visible','lib/state/active_session_controller.dart','if (current.visibleCount <= 1)','if (false)','test/state/remove_exercise_test.dart'],
-  ['cancel-removal','lib/state/active_session_controller.dart','if (choice == RemoveExerciseChoice.cancel || _removing)','if (_removing)','test/state/remove_exercise_test.dart'],
+  ['cancel-removal','lib/state/active_session_controller.dart','if (choice == RemoveExerciseChoice.cancel || writing)','if (writing)','test/state/remove_exercise_test.dart'],
 ];
 const results=[];
 for(const [name,file,before,after,test] of cases){

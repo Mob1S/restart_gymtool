@@ -52,7 +52,7 @@ void main() {
     raw['data']['settings'] = [];
     await setSetting(exec, 'theme_mode', 'dark');
     await restoreBackup(exec, await inspectBackup(exec, validateBackup(raw)));
-    expect(await getSchemaVersion(exec), 4);
+    expect(await getSchemaVersion(exec), 5);
     expect(await getSetting(exec, 'theme_mode'), isNull);
   });
   test(
@@ -102,7 +102,7 @@ void main() {
         await seedExercisesIfEmpty(file);
         expect(await file.all('SELECT * FROM exercise'), isEmpty);
         expect(await getSetting(file, 'theme_mode'), 'dark');
-        expect(await getSchemaVersion(file), 4);
+        expect(await getSchemaVersion(file), 5);
       } finally {
         await file.close();
         await directory.delete(recursive: true);

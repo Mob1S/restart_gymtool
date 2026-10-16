@@ -93,7 +93,8 @@ int compareExercises(Exercise a, Exercise b) {
   final byPinyin = pinyinKey(a.name).compareTo(pinyinKey(b.name));
   if (byPinyin != 0) return byPinyin;
   // 拼音相同时退回码点序，保证排序是**确定的**（不依赖输入顺序）
-  return a.name.compareTo(b.name);
+  final byName = a.name.compareTo(b.name);
+  return byName != 0 ? byName : a.id.compareTo(b.id);
 }
 
 /// 列出全部**未归档**的动作，已按肌群 + 拼音排好序。

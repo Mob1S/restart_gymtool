@@ -50,10 +50,11 @@ const List<Migration> migrations = [
     statements: ['ALTER TABLE session ADD COLUMN template_id TEXT'],
   ),
   Migration(version: 4, statements: [createBackupPlansSql]),
+  Migration(version: 5, statements: [createExercisePreferencesSql]),
 ];
 
 /// 当前库结构版本。必须与 [migrations] 的最后一项保持一致。
-const int schemaVersion = 4;
+const int schemaVersion = 5;
 
 /// 读出当前库结构版本。
 ///

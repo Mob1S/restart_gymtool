@@ -9,6 +9,7 @@ import '../data/repositories/exercise_repo.dart';
 import '../data/repositories/settings_repo.dart';
 import '../state/active_session_controller.dart';
 import '../state/theme_controller.dart';
+import '../state/exercise_preferences_controller.dart';
 import '../state/backup_controller.dart';
 import '../state/data_revision.dart';
 import '../state/import_controller.dart';
@@ -35,6 +36,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
   SqlExecutor? _exec;
   ActiveSessionController? _session;
   ThemeController? _theme;
+  ExercisePreferencesController? _preferences;
   BackupController? _backup;
   ImportController? _import;
   PlanController? _plans;
@@ -67,6 +69,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
       final backup = BackupController(
         exec: exec,
         files: widget.backupFiles ?? PlatformBackupFileStore(),
+        beforeRestore: session.prepareForRestore,
         onRestored: () async {
           _revision.changed();
           session.reset();
@@ -89,6 +92,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
         _exec = exec;
         _session = session;
         _theme = theme;
+        _preferences = ExercisePreferencesController(exec, revision: _revision);
         _backup = backup;
         _import = importer;
         _plans = PlanController(
@@ -138,6 +142,9 @@ class _AppBootstrapState extends State<AppBootstrap> {
         Provider<SqlExecutor>.value(value: exec),
         ChangeNotifierProvider<ActiveSessionController>.value(value: session),
         ChangeNotifierProvider<ThemeController>.value(value: theme),
+        ChangeNotifierProvider<ExercisePreferencesController>.value(
+          value: _preferences!,
+        ),
         ChangeNotifierProvider<BackupController>.value(value: _backup!),
         ChangeNotifierProvider<DataRevision>.value(value: _revision),
         ChangeNotifierProvider<ImportController>.value(value: _import!),
@@ -156,6 +163,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
     _plans?.dispose();
     _records?.dispose();
     _import?.dispose();
+    _preferences?.dispose();
     _revision.dispose();
     _backup?.dispose();
     _session?.dispose();

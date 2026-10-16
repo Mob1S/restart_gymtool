@@ -13,12 +13,14 @@ class BackupController extends ChangeNotifier {
   final BackupFileStore _files;
   final Future<void> Function() _onRestored;
   final int Function() _now;
+  final Future<void> Function()? beforeRestore;
 
   BackupController({
     required this._exec,
     required this._files,
     required this._onRestored,
     int Function()? now,
+    this.beforeRestore,
   }) : _now = now ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   bool _busy = false;
@@ -122,6 +124,7 @@ class BackupController extends ChangeNotifier {
     _notify();
     try {
       try {
+        await beforeRestore?.call();
         await restoreBackup(_exec, selected);
       } catch (error) {
         _clearPreview();

@@ -5,6 +5,10 @@ import '../data/repositories/exercise_repo.dart';
 import '../data/repositories/session_repo.dart';
 import '../data/repositories/set_repo.dart';
 import '../domain/rest.dart';
+import '../domain/workout_edit.dart';
+import '../data/repositories/workout_write_repo.dart';
+import '../data/repositories/workout_edit_repo.dart';
+import '../data/repositories/exercise_replacement_repo.dart';
 import '../domain/session_label.dart';
 import '../domain/types.dart';
 import '../domain/exercise_visibility.dart';
@@ -76,8 +80,8 @@ class ActiveExercise {
 
 /// 当前训练的全部状态与操作。
 ///
-/// 这一层是**唯一**允许判定「能不能改这场训练」的地方（每个写操作都先查
-/// `finishedAt != null`）—— 界面只管调，不用自己判断训练是否已结束。
+/// Coordinates serialized writes and refreshes; repositories revalidate active
+/// sessions and record ownership inside each transaction.
 ///
 /// 状态**只存在内存里**，每个写操作都立刻落库，App 重启后靠 [resume]
 /// 从库重建。刻意不做持久化：真相来源只留 SQLite 一份，
@@ -87,8 +91,236 @@ class ActiveSessionController extends ChangeNotifier {
   final VoidCallback? onDataChanged;
   bool _starting = false;
   bool _removing = false;
+  final int Function() _now;
+  bool _writing = false;
+  bool _needsReload = false;
+  bool _disposed = false;
+  int _generation = 0;
+  String? _writeMessage;
+  final Map<String, double> _stagedWeights = {};
+  Future<WorkoutWriteResult>? _flushing;
+  bool get writing => _writing || _starting || _removing;
+  String? get writeMessage => _writeMessage;
+  bool get savingWeight => _flushing != null;
+  bool get hasPendingWeight => _stagedWeights.isNotEmpty;
+  double? stagedWeight(String id) => _stagedWeights[id];
 
-  ActiveSessionController(this._exec, {this.onDataChanged});
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<WorkoutWriteResult> _write(
+    Future<void> Function() action, {
+    String? focusId,
+  }) async {
+    if (writing || _disposed) return WorkoutWriteResult.busy;
+    if (_needsReload) return WorkoutWriteResult.savedNeedsReload;
+    _writing = true;
+    _writeMessage = null;
+    final generation = _generation;
+    final preferred = focusId ?? currentSessionExerciseId;
+    final index = currentIndex;
+    _notify();
+    var committed = false;
+    try {
+      await action();
+      committed = true;
+      if (generation != _generation || _disposed) {
+        return WorkoutWriteResult.saved;
+      }
+      onDataChanged?.call();
+      if (session != null) {
+        final loaded = await _loadExercises(session!.id);
+        if (generation != _generation || _disposed) {
+          return WorkoutWriteResult.saved;
+        }
+        exercises = loaded;
+        currentIndex = resolveRecordingIndex(
+          recordingExercises.map((e) => e.sessionExercise.id).toList(),
+          focusId ?? preferred,
+          index,
+        );
+      }
+      return WorkoutWriteResult.saved;
+    } on RecordManagementException catch (e) {
+      _writeMessage = e.message;
+      return WorkoutWriteResult.conflict;
+    } catch (_) {
+      _needsReload = committed;
+      _writeMessage = committed ? '已保存，页面刷新失败，请重新载入' : '保存失败，请重试';
+      return committed
+          ? WorkoutWriteResult.savedNeedsReload
+          : WorkoutWriteResult.failed;
+    } finally {
+      _writing = false;
+      _notify();
+    }
+  }
+
+  void stagePendingWeight(String pendingSetId, double weight) {
+    if (_disposed ||
+        (writing && _flushing == null) ||
+        !weight.isFinite ||
+        weight < 0) {
+      return;
+    }
+    if (!exercises.any(
+      (e) => e.sets.any((s) => s.id == pendingSetId && !s.isCompleted),
+    )) {
+      return;
+    }
+    if (_stagedWeights[pendingSetId] == weight) return;
+    final pending = exercises
+        .expand((e) => e.sets)
+        .firstWhere((s) => s.id == pendingSetId);
+    if (_flushing == null && pending.weight == weight) {
+      if (_stagedWeights.remove(pendingSetId) != null) _notify();
+      return;
+    }
+    _stagedWeights[pendingSetId] = weight;
+    _notify();
+  }
+
+  Future<WorkoutWriteResult> flushPendingWeight() {
+    if (_flushing != null) return _flushing!;
+    if (_stagedWeights.isEmpty) {
+      return Future.value(WorkoutWriteResult.unchanged);
+    }
+    if (writing) return Future.value(WorkoutWriteResult.busy);
+    final generation = _generation;
+    final sid = session?.id;
+    if (sid == null) return Future.value(WorkoutWriteResult.conflict);
+    final future = _write(() async {
+      while (_stagedWeights.isNotEmpty && generation == _generation) {
+        final item = _stagedWeights.entries.first;
+        await savePendingWeight(
+          _exec,
+          sessionId: sid,
+          pendingSetId: item.key,
+          weight: item.value,
+        );
+        if (generation != _generation) return;
+        if (_stagedWeights[item.key] == item.value) {
+          _stagedWeights.remove(item.key);
+        }
+      }
+    });
+    _flushing = future;
+    return future.whenComplete(() => _flushing = null);
+  }
+
+  Future<bool> _flushReady() async {
+    final result = await flushPendingWeight();
+    return result == WorkoutWriteResult.saved ||
+        result == WorkoutWriteResult.unchanged;
+  }
+
+  Future<CompletedSetEdit?> previewCompletedSet(String id) async {
+    if (!await _flushReady() || writing || session == null) return null;
+    return inspectCompletedSet(_exec, session!.id, id);
+  }
+
+  Future<UndoSetPreview?> previewUndo() async {
+    if (!await _flushReady() ||
+        writing ||
+        session == null ||
+        currentSessionExerciseId == null) {
+      return null;
+    }
+    return inspectUndoSet(
+      _exec,
+      session!.id,
+      currentSessionExerciseId!,
+      now: _now(),
+    );
+  }
+
+  Future<WorkoutWriteResult> editCompletedSet(
+    CompletedSetEdit edit,
+    double weight,
+    int reps,
+  ) async {
+    if (session?.id != edit.sessionId || session?.finishedAt != null) {
+      return WorkoutWriteResult.conflict;
+    }
+    if (!await _flushReady()) return WorkoutWriteResult.failed;
+    return _write(
+      () => updateCompletedSet(_exec, edit, weight: weight, reps: reps),
+    );
+  }
+
+  Future<WorkoutWriteResult> undoLastCompletion(UndoSetPreview preview) async {
+    if (session?.id != preview.sessionId || session?.finishedAt != null) {
+      return WorkoutWriteResult.conflict;
+    }
+    if (!await _flushReady()) return WorkoutWriteResult.failed;
+    return _write(() => undoCompletedSet(_exec, preview, now: _now()));
+  }
+
+  Future<ExerciseReplacementPreview?> previewReplacement(
+    String targetId,
+  ) async {
+    if (!await _flushReady() ||
+        writing ||
+        session == null ||
+        currentSessionExerciseId == null) {
+      return null;
+    }
+    return inspectExerciseReplacement(
+      _exec,
+      session!.id,
+      currentSessionExerciseId!,
+      targetId,
+    );
+  }
+
+  Future<WorkoutWriteResult> replaceExercise(
+    ExerciseReplacementPreview preview,
+  ) async {
+    if (session?.id != preview.sessionId || session?.finishedAt != null) {
+      return WorkoutWriteResult.conflict;
+    }
+    if (!await _flushReady()) return WorkoutWriteResult.failed;
+    if (preview.sourceExerciseId == preview.targetExerciseId) {
+      return WorkoutWriteResult.unchanged;
+    }
+    String? target;
+    final result = await _write(() async {
+      target = await replaceWorkoutExercise(_exec, preview);
+    });
+    if (result == WorkoutWriteResult.saved && target != null) {
+      currentIndex = resolveRecordingIndex(
+        recordingExercises.map((e) => e.sessionExercise.id).toList(),
+        target,
+        0,
+      );
+      _notify();
+    }
+    return result;
+  }
+
+  /// Invalidates page drafts before replacing the database.
+  Future<void> prepareForRestore() async {
+    final result = await flushPendingWeight();
+    if (result != WorkoutWriteResult.saved &&
+        result != WorkoutWriteResult.unchanged) {
+      throw StateError('重量尚未保存，请返回训练重试');
+    }
+    if (writing) throw StateError('训练正在保存，请稍后重试');
+    _generation++;
+    _stagedWeights.clear();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    _stagedWeights.clear();
+    super.dispose();
+  }
+
+  ActiveSessionController(this._exec, {this.onDataChanged, int Function()? now})
+    : _now = now ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   /// 正在从库里载入（[resume] 期间为 true），界面据此显示加载态
   bool loading = false;
@@ -109,7 +341,7 @@ class ActiveSessionController extends ChangeNotifier {
   /// 载入未结束的训练；没有就返回 false。
   Future<bool> resume() async {
     loading = true;
-    notifyListeners();
+    _notify();
     try {
       final found = await getActiveSession(_exec);
       if (found == null) {
@@ -120,12 +352,14 @@ class ActiveSessionController extends ChangeNotifier {
       }
       final loaded = await _loadExercises(found.id);
       session = found;
+      _needsReload = false;
+      _writeMessage = null;
       exercises = loaded;
       currentIndex = await _resolveCurrentIndex(found.id, recordingExercises);
       return true;
     } finally {
       loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -142,7 +376,7 @@ class ActiveSessionController extends ChangeNotifier {
     String? preferredTemplateId,
     String? selectionToken,
   }) async {
-    if (_starting) return StartResult.busy;
+    if (writing) return StartResult.busy;
     _starting = true;
     try {
       // 复用 resume 而不是另写一次查询：它会把那一场连动作带组一起装进
@@ -172,7 +406,7 @@ class ActiveSessionController extends ChangeNotifier {
             templateId: plan.templateId,
           );
           for (final exerciseId in plan.exerciseIds) {
-            await _addExerciseWithFirstSet(tx, s.id, exerciseId);
+            await addExerciseWithFirstSet(tx, s.id, exerciseId);
           }
           return s;
         });
@@ -190,11 +424,11 @@ class ActiveSessionController extends ChangeNotifier {
       } catch (_) {
         exercises = [];
         currentIndex = 0;
-        notifyListeners();
+        _notify();
         return StartResult.refreshFailed;
       }
       currentIndex = 0;
-      notifyListeners();
+      _notify();
       return StartResult.started;
     } finally {
       _starting = false;
@@ -203,24 +437,41 @@ class ActiveSessionController extends ChangeNotifier {
 
   /// 往训练里加一个动作。
   Future<void> addExercise(String exerciseId) async {
+    await addExercises([exerciseId]);
+  }
+
+  Future<WorkoutWriteResult> addExercises(List<String> exerciseIds) async {
+    if (writing) return WorkoutWriteResult.busy;
+    if (exerciseIds.isEmpty) return WorkoutWriteResult.unchanged;
+    if (!await _flushReady()) return WorkoutWriteResult.failed;
     final current = session;
-    // 已结束的训练不能再往里加东西。正常路径下 endWorkout 已经清空 controller、
-    // session 为 null，这里挡的是「有人把一场已结束的训练塞回 controller」——
-    // 旧项目那个「同一场训练被接上第二次、第三次」的 bug 就是这么来的。
-    if (current == null || current.finishedAt != null) return;
-
-    await _addExerciseWithFirstSet(_exec, current.id, exerciseId);
-
-    exercises = await _loadExercises(current.id);
-    currentIndex = recordingExercises.length - 1;
-    notifyListeners();
+    if (current == null || current.finishedAt != null) {
+      return WorkoutWriteResult.conflict;
+    }
+    List<String> ids = [];
+    final result = await _write(() async {
+      ids = await addWorkoutExercises(_exec, current.id, exerciseIds);
+    });
+    if (result == WorkoutWriteResult.saved && ids.isNotEmpty) {
+      currentIndex = resolveRecordingIndex(
+        recordingExercises.map((e) => e.sessionExercise.id).toList(),
+        ids.first,
+        0,
+      );
+      _notify();
+    }
+    return result;
   }
 
   /// 切换当前正在记录的动作。**不写数据库** —— 它是纯界面状态。
-  void setCurrentIndex(int index) {
+  Future<void> setCurrentIndex(int index) async {
+    if (writing && !savingWeight) return;
+    if ((_stagedWeights.isNotEmpty || savingWeight) && !await _flushReady()) {
+      return;
+    }
     if (index < 0 || index >= recordingExercises.length) return;
     currentIndex = index;
-    notifyListeners();
+    _notify();
   }
 
   /// 记完当前这一组：写数值 → 标完成 → 起休息计时 → 预建下一组，四步都落盘。
@@ -228,161 +479,77 @@ class ActiveSessionController extends ChangeNotifier {
   /// 以下情况**静默返回**（都不报错）：训练已结束、currentIndex 越界、
   /// 该动作已无未完成的组（重复点击）。
   Future<void> completeCurrentSet(double weight, int reps) async {
+    if (writing) return;
     final current = session;
-    if (current == null || current.finishedAt != null) return;
-    final active = currentExercise;
-    if (active == null) return;
-    final pending = _firstOrNull(active.sets.where((s) => !s.isCompleted));
-    if (pending == null) return;
-
-    final now = DateTime.now().millisecondsSinceEpoch;
-
-    // 开始新的一段休息之前，先把**会话里**还在进行的那一段结掉。
-    // 理由见 [_findAnyResting] —— 这是「同时至多一段休息在进行」这条
-    // 不变量在编排层的守门人，不能只靠界面。
-    final previousRest = _findAnyResting();
-    if (previousRest != null) {
-      await endRest(_exec, previousRest.id, now);
+    final pending = currentExercise?.sets
+        .where((s) => !s.isCompleted)
+        .firstOrNull;
+    if (current == null || current.finishedAt != null || pending == null) {
+      return;
     }
-
-    // 顺序不能反：先把用户填的数值写进去，再标记完成。
-    // 反过来一旦中途失败，就会留下「已完成但数值是旧的」的记录 ——
-    // 而全局约束要求每完成一组立刻落盘，用户看到的就是最终记录。
-    await updateSetValues(_exec, pending.id, weight, reps);
-    await completeSet(_exec, pending.id, now);
-    await startRest(_exec, pending.id, now);
-
-    // 预先建好下一组，这样休息结束后立刻有东西可填
-    await addSet(_exec, active.sessionExercise.id, weight, reps);
-
-    final updated = await listSets(_exec, active.sessionExercise.id);
-    exercises = List.of(exercises)
-      ..[exercises.indexWhere(
-        (e) => e.sessionExercise.id == active.sessionExercise.id,
-      )] = active.copyWith(
-        sets: updated,
-      );
-    notifyListeners();
+    await _write(
+      () => completeWorkoutSet(
+        _exec,
+        sessionId: current.id,
+        pendingSetId: pending.id,
+        weight: weight,
+        reps: reps,
+        now: _now(),
+      ),
+    );
   }
 
   /// 结束休息、进入下一组：写入这段休息的秒数并清掉 `restStartedAt`。
   ///
   /// 当前没有在休息时只是刷新一下列表，不写库。
   Future<void> beginNextSet() async {
+    if (!await _flushReady() || writing) return;
     final current = session;
-    if (current == null || current.finishedAt != null) return;
-    final active = currentExercise;
-    if (active == null) return;
-
-    // **会话级**查找，不是只看当前动作 —— 见 [_findAnyResting]。
-    // 「开始下一组」的意思是「休息结束了」，与哪一段无关。
-    final resting = _findAnyResting();
-    if (resting != null) {
-      await endRest(_exec, resting.id, DateTime.now().millisecondsSinceEpoch);
+    final pending = currentExercise?.sets
+        .where((s) => !s.isCompleted)
+        .firstOrNull;
+    if (current == null || current.finishedAt != null || pending == null) {
+      return;
     }
-
-    final updated = await listSets(_exec, active.sessionExercise.id);
-    exercises = List.of(exercises)
-      ..[exercises.indexWhere(
-        (e) => e.sessionExercise.id == active.sessionExercise.id,
-      )] = active.copyWith(
-        sets: updated,
-      );
-    notifyListeners();
+    await _write(
+      () => beginWorkoutSet(
+        _exec,
+        sessionId: current.id,
+        pendingSetId: pending.id,
+        now: _now(),
+      ),
+    );
   }
 
-  /// 找出**整场训练里**正在进行的那一段休息（不属于某个动作，跨全部动作找）。
-  ///
-  /// ## 为什么必须是会话级的
-  ///
-  /// 「同时至多一段休息在进行」是一条真实的不变量：`rest_seconds` 存在
-  /// **本组做完之后**那段休息上，而结算它的入口（[beginNextSet] /
-  /// [completeCurrentSet] / [endWorkout]）只会结束找到的那一段 ——
-  /// 若同时有两段在跑，另一段的 `rest_seconds` **永远是 NULL**，
-  /// 总结页的平均休息就少了一个数据点，而且**不报错**。
-  ///
-  /// ## 为什么不能只靠界面
-  ///
-  /// 记录页的动作条渲染在 body **之外**（换动作不必退出记录界面，这是刻意的），
-  /// 而 body 只在**当前动作**在休息时才显示休息界面。于是这条路是通的：
-  ///
-  /// 1. 深蹲完成一组 → 深蹲进入休息，body 显示休息界面
-  /// 2. **动作条还在** → 用户点「卧推」的 chip，body 切回卧推的记录态
-  /// 3. 点「✓ 完成这组」→ 卧推也开始休息 → **两段休息同时在跑**
-  ///
-  /// 所以这条不变量由编排层把守，而不是靠界面碰巧不显示按钮。
-  ///
-  /// 返回 null 表示当前没有在休息。
-  SetEntry? _findAnyResting() {
-    for (final item in exercises) {
-      final found = _firstOrNull(
-        item.sets.where((s) => s.isCompleted && s.restStartedAt != null),
-      );
-      if (found != null) return found;
-    }
-    return null;
-  }
-
-  /// 结束并**立刻清空** controller。
-  ///
-  /// 收尾：如果正处在休息中，先把这段休息结掉，否则这一组的 `rest_seconds`
-  /// 永远是 NULL，总结页算不出平均休息。
-  ///
-  /// **按会话找，不是只看当前动作** —— 用户可能在别的动作上还挂着一段休息
-  /// （见 [_findAnyResting]），只看当前动作会漏掉它。
-  ///
-  /// 结束之后立刻清内存，而不是等用户在总结页点「完成」——
-  /// 「已经结束但还是当前训练」这个中间态正是旧项目「主页一直显示继续上次训练」
-  /// 的直接原因：用户从总结页按系统返回键离开时永远走不到清空那一步，
-  /// 而主页只看 controller 里有没有 session。
-  ///
-  /// **总结页不受影响**：它按路由参数 id 从库里读，不依赖 controller。
-  ///
-  /// 返回被结束的那场的 id；controller 里本来就没有训练时返回 null。
+  /// Atomically finish, discard unconfirmed final rest, and clear active memory.
+  /// The summary reads the finished session directly from the database.
   Future<String?> endWorkout() async {
+    if (!await _flushReady() || writing) return null;
     final current = session;
     if (current == null) return null;
-
-    // **丢掉**这段休息，不是把它结掉（`cancelRest` 而不是 `endRest`）。
-    //
-    // `completeCurrentSet` 给**每一组**都开了休息，所以刚做完最后一组时必然
-    // 有一段在进行 —— 它的时长是「做完最后一组到按下结束」的间隔，而这个
-    // 间隔**不可知**：用户可能在收杠铃，也可能已经揣兜里了。写成测量值就是
-    // 伪造：实测 `[300, 300, 3]` 会让屏幕上出现「平均歇了 3 分 21 秒」，
-    // 而用户真歇了 5 分 00 秒；还会把 200 秒那组从 `addWeight` 压成 `positive`。
-    //
-    // 这条与 [cancelRest] 的既有用途（休息跑太久，显然是忘了按开始下一组）
-    // 是同一条道理：**不是真实休息的时长，不该作为数据留下来**。
-    // 也与旧设计文档 §503「没有真实的组间休息数据，编一个平均值比留空更糟」
-    // 和 `rest_advice` 里「最后一组通常是 null」对齐。
-    //
-    // 用户若真的歇够了，会先按「开始下一组」——那一按把这段休息**结掉**
-    // （`beginNextSet` 走 `endRest`），值由用户确认过，那时 `endWorkout`
-    // 已经找不到进行中的休息，这一行不会碰它。
-    final resting = _findAnyResting();
-    if (resting != null) {
-      await cancelRest(_exec, resting.id);
-    }
-
-    final finishedId = current.id;
-    await finishSession(
-      _exec,
-      finishedId,
-      DateTime.now().millisecondsSinceEpoch,
-    );
-
-    reset();
-    onDataChanged?.call();
-    return finishedId;
+    final result = await _write(() async {
+      await finishActiveWorkout(_exec, sessionId: current.id, now: _now());
+      session = null;
+      exercises = [];
+      currentIndex = 0;
+    });
+    return result == WorkoutWriteResult.saved ||
+            result == WorkoutWriteResult.savedNeedsReload
+        ? current.id
+        : null;
   }
 
   /// 清空内存里的训练状态。**不碰数据库、不结束训练** ——
   /// 调用方要负责先 [finishSession]（[endWorkout] 已经这么做了）。
   void reset() {
+    _generation++;
+    _stagedWeights.clear();
+    _needsReload = false;
+    _writeMessage = null;
     session = null;
     exercises = [];
     currentIndex = 0;
-    notifyListeners();
+    _notify();
   }
 
   // ── 以下为私有实现 ──────────────────────────────────────────────
@@ -399,7 +566,7 @@ class ActiveSessionController extends ChangeNotifier {
   /// endWorkout 全都会经过它，**一处覆盖全部**。
   Future<List<ActiveExercise>> _loadExercises(String sessionId) async {
     final sessionExercises = await listSessionExercises(_exec, sessionId);
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = _now();
     final result = <ActiveExercise>[];
 
     for (final se in sessionExercises) {
@@ -451,38 +618,9 @@ class ActiveSessionController extends ChangeNotifier {
     return index < 0 ? 0 : index;
   }
 
-  /// 「上一次练了哪些动作」—— 没有计划时唯一的动作来源。
-  ///
-  /// [listSessions] 只返回**已结束**的训练，所以这里天然不会把一场还在
-  /// 进行中的训练当成「上一次」。没有历史（第一次用）时返回空数组。
-
-  /// 往训练里加一个动作，并预建它的第一组。
-  ///
-  /// **预建第一组不是可选项。** 记录界面靠「还没完成的那一组」来确定当前该记
-  /// 哪一组，没有这条待完成的记录，[completeCurrentSet] 会直接 return，
-  /// **用户点「完成这组」会毫无反应 —— 一个静默的假死按钮。**
-  ///
-  /// 重量 / 次数沿用上一次练这个动作的第一组，没有历史时用默认值兜底。
-  ///
-  /// 抽成私有函数是为了让 [startNew] 和 [addExercise] 共用同一条路径。
-  /// 两处各写一遍必然漂移，而漂移的后果正是上面那个「按钮没反应」。
-  Future<void> _addExerciseWithFirstSet(
-    SqlExecutor exec,
-    String sessionId,
-    String exerciseId,
-  ) async {
-    final se = await addExerciseToSession(exec, sessionId, exerciseId);
-    final last = await getLastPerformance(exec, exerciseId, sessionId);
-    final template = last.isEmpty ? null : last.first;
-    await addSet(
-      exec,
-      se.id,
-      template?.weight ?? defaultWeightKg,
-      template?.reps ?? defaultReps,
-    );
-  }
-
+  /// Flush prepared weight before taking the removal confirmation snapshot.
   Future<ExerciseRemovalPreview?> previewExerciseRemoval(String id) async {
+    if (!await _flushReady() || writing) return null;
     final current = session;
     if (current == null || current.finishedAt != null) return null;
     return _exec.transaction((tx) => _removalPreview(tx, current.id, id));
@@ -524,7 +662,8 @@ class ActiveSessionController extends ChangeNotifier {
     ExerciseRemovalPreview preview,
     RemoveExerciseChoice choice,
   ) async {
-    if (choice == RemoveExerciseChoice.cancel || _removing) return false;
+    if (choice == RemoveExerciseChoice.cancel || writing) return false;
+    if (!await _flushReady() || writing) return false;
     if (session?.id != preview.sessionId || session?.finishedAt != null) {
       return false;
     }
@@ -562,7 +701,7 @@ class ActiveSessionController extends ChangeNotifier {
         preferred,
         index,
       );
-      notifyListeners();
+      _notify();
       return true;
     } finally {
       _removing = false;
@@ -579,19 +718,6 @@ class ActiveSessionController extends ChangeNotifier {
       finishedAt: s.finishedAt,
       note: s.note,
     );
-    notifyListeners();
+    _notify();
   }
-}
-
-/// `Iterable.firstOrNull` —— 取第一个元素，没有元素时返回 null。
-///
-/// Dart 的 `Iterable` **没有内置它**（那是 `package:collection` 的扩展）。
-/// 本工程里 `collection` 只是传递依赖，直接 import 会触发
-/// `depend_on_referenced_packages`；而这里只有三处要用，
-/// 因此自己写一个私有的，不为此新增一条依赖。
-T? _firstOrNull<T>(Iterable<T> items) {
-  for (final item in items) {
-    return item;
-  }
-  return null;
 }

@@ -59,6 +59,12 @@ class _BackupPreviewDialogState extends State<BackupPreviewDialog> {
                 '动作：${incoming.rows('exercises').length} 个 · 组：${incoming.rows('sets').length}',
               ),
               Text('计划：${incoming.rows('templates').length} 个'),
+              Text('动作偏好 ${incoming.rows('exercisePreferences').length} 项'),
+              Text(
+                incoming.version < 3
+                    ? '旧备份将收藏、调重幅度和器械备忘恢复为默认。'
+                    : '本机收藏、调重幅度和器械备忘将一起替换。',
+              ),
               const SizedBox(height: 16),
               Text(
                 '动作库：本机 ${current.rows('exercises').length} 个 → 备份 ${incoming.rows('exercises').length} 个',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../ui/theme.dart';
+import '../../domain/exercise_preferences.dart';
 import '../../ui/tokens.dart';
 
 /// 一对 −/+ 做精确微调。
@@ -29,13 +30,11 @@ class NumberStepper extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _btn(context, Icons.remove, () {
-          final next = (value - step).clamp(min, max);
-          onChanged((next / step).round() * step);
+          onChanged(adjustWeight(value, step, -1, min: min, max: max));
         }),
         const SizedBox(width: AppSpacing.lg),
         _btn(context, Icons.add, () {
-          final next = (value + step).clamp(min, max);
-          onChanged((next / step).round() * step);
+          onChanged(adjustWeight(value, step, 1, min: min, max: max));
         }),
       ],
     );
@@ -43,16 +42,19 @@ class NumberStepper extends StatelessWidget {
 
   Widget _btn(BuildContext context, IconData icon, VoidCallback onTap) {
     final c = appColors(context);
-    return SizedBox(
-      width: 48,
-      height: 48,
-      child: Material(
-        color: c.surfacePressed,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        child: InkWell(
-          onTap: onTap,
+    return Tooltip(
+      message: icon == Icons.add ? '增加' : '减少',
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Material(
+          color: c.surfacePressed,
           borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-          child: Icon(icon, size: 22, color: c.textSecondary),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+            child: Icon(icon, size: 22, color: c.textSecondary),
+          ),
         ),
       ),
     );

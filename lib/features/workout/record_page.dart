@@ -5,6 +5,13 @@ import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../domain/types.dart';
+import '../../domain/format.dart';
+import '../../domain/workout_edit.dart';
+import '../../state/exercise_preferences_controller.dart';
+import 'completed_sets_sheet.dart';
+import 'exercise_settings_sheet.dart';
+import 'next_set_weight.dart';
+import 'replace_exercise_sheet.dart';
 import '../../state/active_session_controller.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
@@ -47,6 +54,12 @@ class _RecordPageState extends State<RecordPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final c = context.read<ActiveSessionController>();
       await c.resume();
+      if (mounted) {
+        final preferences = context.read<ExercisePreferencesController?>();
+        await preferences?.load(
+          c.exercises.map((e) => e.sessionExercise.exerciseId),
+        );
+      }
       _syncFromPending(c);
       if (mounted) setState(() => _ready = true);
     });
@@ -93,9 +106,12 @@ class _RecordPageState extends State<RecordPage> {
     if (weight == null || reps == null) return;
 
     // 一次轻微震动，**让用户不用盯着屏幕确认**（规格 §6.1）
-    await HapticFeedback.lightImpact();
-
+    if (c.writing) return;
     await c.completeCurrentSet(weight, reps);
+    if (c.writeMessage == null &&
+        c.currentExercise?.sets.any((s) => s.restStartedAt != null) == true) {
+      await HapticFeedback.lightImpact();
+    }
     _syncFromPending(c);
   }
 
@@ -105,9 +121,20 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   Future<void> _addExercise(ActiveSessionController c) async {
-    final picked = await showExercisePicker(context);
+    final flushed = await c.flushPendingWeight();
+    if (!mounted ||
+        (flushed != WorkoutWriteResult.saved &&
+            flushed != WorkoutWriteResult.unchanged)) {
+      return;
+    }
+    final picked = await showExerciseMultiPicker(context);
     if (picked == null || !mounted) return;
-    await c.addExercise(picked.id);
+    await c.addExercises(picked.map((e) => e.id).toList());
+    if (mounted) {
+      await context.read<ExercisePreferencesController?>()?.load(
+        picked.map((e) => e.id),
+      );
+    }
     _syncFromPending(c);
   }
 
@@ -148,76 +175,177 @@ class _RecordPageState extends State<RecordPage> {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: sc.background,
-        title: Text(session.name ?? '训练'),
-        actions: [
-          if (c.recordingExercises.length > 1)
-            IconButton(
-              tooltip: '移除当前动作',
-              onPressed: !_ready || c.loading ? null : () => _remove(c),
-              icon: const Icon(Icons.playlist_remove),
-            ),
-          if (context.watch<RecordManagementController?>() != null)
-            IconButton(
-              tooltip: '删除这场训练',
-              onPressed:
-                  !_ready ||
-                      c.loading ||
-                      context.watch<RecordManagementController?>()?.busy == true
+    return PopScope(
+      canPop: !c.hasPendingWeight && !c.writing,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || c.writing) return;
+        final result = await c.flushPendingWeight();
+        if (mounted &&
+            (result == WorkoutWriteResult.saved ||
+                result == WorkoutWriteResult.unchanged)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) Navigator.of(context).maybePop();
+          });
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: sc.background,
+          title: Text(session.name ?? '训练'),
+          actions: [
+            if (c.recordingExercises.length > 1)
+              IconButton(
+                tooltip: '移除当前动作',
+                onPressed: !_ready || (c.loading || c.writing)
+                    ? null
+                    : () => _remove(c),
+                icon: const Icon(Icons.playlist_remove),
+              ),
+            if (context.watch<RecordManagementController?>() != null)
+              IconButton(
+                tooltip: '删除这场训练',
+                onPressed:
+                    !_ready ||
+                        c.loading ||
+                        context.watch<RecordManagementController?>()?.busy ==
+                            true
+                    ? null
+                    : () async {
+                        if (await showDeleteSessionDialog(
+                              context,
+                              widget.sessionId,
+                            ) &&
+                            context.mounted) {
+                          context.go('/');
+                        }
+                      },
+                icon: const Icon(Icons.delete_outline),
+              ),
+            TextButton(
+              onPressed: !_ready || (c.loading || c.writing)
                   ? null
-                  : () async {
-                      if (await showDeleteSessionDialog(
-                            context,
-                            widget.sessionId,
-                          ) &&
-                          context.mounted) {
-                        context.go('/');
-                      }
-                    },
-              icon: const Icon(Icons.delete_outline),
-            ),
-          TextButton(
-            onPressed: !_ready || c.loading ? null : () => _endWorkout(c),
-            child: const Text('结束训练'),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // ── 动作条：换动作不必退出记录界面 ──
-            ExerciseStrip(
-              exercises: c.recordingExercises,
-              currentIndex: c.currentIndex,
-              onSelect: (i) {
-                if (!_ready || c.loading) return;
-                c.setCurrentIndex(i);
-                _syncFromPending(c);
-              },
-              onAdd: () {
-                if (_ready && !c.loading) _addExercise(c);
-              },
-            ),
-
-            Expanded(
-              child: !_ready || c.loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : c.recordingExercises.isEmpty
-                  // 空训练**不是死路** —— 旧项目在这里踩过坑：
-                  // 只写一句「这次训练还没有动作」，没有任何添加入口
-                  ? EmptyState(
-                      message: '这次训练还没有动作',
-                      action: PrimaryButton(
-                        label: '添加动作',
-                        icon: Icons.add,
-                        onPressed: () => _addExercise(c),
-                      ),
-                    )
-                  : _body(c, sc),
+                  : () => _endWorkout(c),
+              child: const Text('结束训练'),
             ),
           ],
+        ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // ── 动作条：换动作不必退出记录界面 ──
+              ExerciseStrip(
+                exercises: c.recordingExercises,
+                currentIndex: c.currentIndex,
+                onSelect: (i) async {
+                  if (!_ready || c.loading || (c.writing && !c.savingWeight)) {
+                    return;
+                  }
+                  await c.setCurrentIndex(i);
+                  _syncFromPending(c);
+                },
+                onAdd: () {
+                  if (_ready && !c.loading && !c.writing) _addExercise(c);
+                },
+              ),
+
+              if (c.currentExercise != null)
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  children: [
+                    TextButton(
+                      onPressed: c.writing
+                          ? null
+                          : () => showCompletedSetsSheet(
+                              context,
+                              c,
+                              context.read<ExercisePreferencesController?>(),
+                            ),
+                      key: const ValueKey('completed-sets'),
+                      child: Text(
+                        '本场已记 ${c.exercises.expand((e) => e.sets).where((s) => s.isCompleted).length} 组',
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: c.writing
+                          ? null
+                          : () async {
+                              final prefs = context
+                                  .read<ExercisePreferencesController?>();
+                              final active = c.currentExercise!;
+                              final flushed = await c.flushPendingWeight();
+                              if (!context.mounted ||
+                                  prefs == null ||
+                                  (flushed != WorkoutWriteResult.saved &&
+                                      flushed !=
+                                          WorkoutWriteResult.unchanged)) {
+                                return;
+                              }
+                              await showExerciseSettingsSheet(
+                                context,
+                                prefs,
+                                active.sessionExercise.exerciseId,
+                                active.exerciseName,
+                              );
+                            },
+                      child: const Text('动作设置'),
+                    ),
+                    TextButton(
+                      onPressed: c.writing
+                          ? null
+                          : () async {
+                              await showReplaceExerciseSheet(context, c);
+                              if (context.mounted) {
+                                await context
+                                    .read<ExercisePreferencesController?>()
+                                    ?.load(
+                                      c.exercises.map(
+                                        (e) => e.sessionExercise.exerciseId,
+                                      ),
+                                    );
+                              }
+                              _syncFromPending(c);
+                            },
+                      child: const Text('替换当前动作'),
+                    ),
+                  ],
+                ),
+              if (c.writeMessage != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    children: [
+                      Text(c.writeMessage!),
+                      TextButton(
+                        onPressed: c.writing
+                            ? null
+                            : () async {
+                                await c.resume();
+                                _syncFromPending(c);
+                              },
+                        child: const Text('重新载入'),
+                      ),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: !_ready || c.loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : c.recordingExercises.isEmpty
+                    // 空训练**不是死路** —— 旧项目在这里踩过坑：
+                    // 只写一句「这次训练还没有动作」，没有任何添加入口
+                    ? EmptyState(
+                        message: '这次训练还没有动作',
+                        action: PrimaryButton(
+                          label: '添加动作',
+                          icon: Icons.add,
+                          onPressed: () => _addExercise(c),
+                        ),
+                      )
+                    : _body(c, sc),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -225,6 +353,10 @@ class _RecordPageState extends State<RecordPage> {
 
   Widget _body(ActiveSessionController c, AppColors sc) {
     final active = c.currentExercise!;
+    final prefs = context.watch<ExercisePreferencesController?>();
+    final preference = prefs?.preferenceFor(active.sessionExercise.exerciseId);
+    final step = preference?.weightStepKg ?? 2.5;
+    final note = preference?.equipmentNote ?? '';
     final total = active.sets.length;
     final completed = active.sets.where((s) => s.isCompleted).length;
     final resting = _firstOrNull(
@@ -236,7 +368,65 @@ class _RecordPageState extends State<RecordPage> {
       return RestView(
         restStartedAt: resting.restStartedAt!,
         nextSetNumber: completed + 1,
-        onBeginNextSet: () => _beginNextSet(c),
+        onBeginNextSet: c.writing && !c.savingWeight
+            ? null
+            : () => _beginNextSet(c),
+        exerciseName: active.exerciseName,
+        details: [
+          EquipmentNote(note: note),
+          if (_pendingOf(c) != null)
+            NextSetWeight(
+              key: ValueKey(_pendingOf(c)!.id),
+              controller: c,
+              pending: _pendingOf(c)!,
+              step: step,
+            ),
+          Text('刚完成 ${formatWeightKg(resting.weight)} kg × ${resting.reps}'),
+          TextButton(
+            onPressed: c.writing
+                ? null
+                : () async {
+                    try {
+                      final preview = await c.previewUndo();
+                      if (!mounted) return;
+                      if (preview == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已开始后续组或休息已失效，无法撤销')),
+                        );
+                        return;
+                      }
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('撤销刚才的完成？'),
+                          content: const Text('返回刚才这一组，下一组准备值将清除'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('取消'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('撤销完成'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await c.undoLastCompletion(preview);
+                        _syncFromPending(c);
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('$e')));
+                      }
+                    }
+                  },
+            key: const ValueKey('undo-last-completion'),
+            child: const Text('误点完成？撤销'),
+          ),
+        ],
       );
     }
 
@@ -274,17 +464,20 @@ class _RecordPageState extends State<RecordPage> {
 
           const SizedBox(height: AppSpacing.lg),
           _lastPerformanceLine(active, sc),
+          EquipmentNote(note: note),
 
           const Spacer(),
 
           DragNumber(
             value: weight,
+            step: step,
             onChanged: (v) => setState(() => _weight = v),
           ),
 
           const SizedBox(height: AppSpacing.xl),
           NumberStepper(
             value: weight,
+            step: step,
             onChanged: (v) => setState(() => _weight = v),
           ),
 
@@ -298,7 +491,9 @@ class _RecordPageState extends State<RecordPage> {
             child: PrimaryButton(
               label: '✓ 完成这组',
               // 没有待完成的组时置灰 —— 那正是「点了没反应」的假死状态
-              onPressed: pending == null ? null : () => _complete(c),
+              onPressed: pending == null || c.writing
+                  ? null
+                  : () => _complete(c),
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
@@ -362,8 +557,7 @@ class _RecordPageState extends State<RecordPage> {
     );
   }
 
-  String _fmt(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+  String _fmt(double v) => formatWeightKg(v);
 }
 
 /// `Iterable.firstOrNull` —— 取第一个元素，没有元素时返回 null。

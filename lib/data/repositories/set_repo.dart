@@ -112,7 +112,7 @@ Future<List<SetEntry>> listSets(
   final rows = await exec.all<Map<String, Object?>>(
     '''SELECT $setColumns FROM set_entry
        WHERE session_exercise_id = ?
-       ORDER BY position ASC''',
+       ORDER BY position ASC, rowid ASC''',
     [sessionExerciseId],
   );
   return rows.map((m) => toSetEntry(SetRow.fromMap(m))).toList();
@@ -231,7 +231,7 @@ Future<List<SetEntry>> getLastPerformance(
         WHERE se.exercise_id = ?
           AND se.session_id = ?
           AND st.is_completed = 1
-        ORDER BY st.position ASC''',
+        ORDER BY st.position ASC, st.rowid ASC''',
     [exerciseId, previousId],
   );
 

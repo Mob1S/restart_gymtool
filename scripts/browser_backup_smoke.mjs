@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const webRoot = path.join(root, 'build', 'web');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const feature = process.env.GYM_BROWSER_FEATURE;
-assert(!feature || ['import', 'plans'].includes(feature));
+assert(!feature || ['import', 'plans', 'workout_efficiency'].includes(feature));
 const output = path.join(root, 'build', 'acceptance', `browser-${feature || 'backup'}-${stamp}`);
 const chromePath = process.env.CHROME_EXECUTABLE || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -86,7 +86,7 @@ async function evaluate(expression) {
 }
 const semanticsExpression = `Array.from(document.querySelectorAll('flt-semantics')).map(e => {
   const r = e.getBoundingClientRect();
-  return {text: e.getAttribute('aria-label') || e.innerText || '', role: e.getAttribute('role'),
+  return {text: e.getAttribute('aria-label') || Array.from(e.querySelectorAll('input,textarea')).map(i=>i.getAttribute('aria-label') || i.placeholder || '').filter(Boolean).join('\\n') || e.innerText || '', role: e.getAttribute('role'),
     x: r.x, y: r.y, width: r.width, height: r.height};
 }).filter(e => e.width && e.height)`;
 async function semantics() {
@@ -107,7 +107,7 @@ async function clickAt(x, y) {
 }
 async function clickText(text, exact = false) {
   const element = await until(async () => {
-    const matches = (await semantics()).filter(e => exact ? e.text === text : e.text.includes(text));
+    const matches = (await semantics()).filter(e => (exact ? e.text === text : e.text.includes(text)) && (text.startsWith('收藏 ') || !e.text.startsWith('收藏 ')));
     return matches.sort((a, b) => a.width * a.height - b.width * b.height)[0];
   }, `clickable text: ${text}`);
   await clickAt(element.x + element.width / 2, element.y + element.height / 2);
@@ -230,7 +230,7 @@ try {
   if (feature) {
     const { run } = await import(`./browser_${feature}_smoke.mjs`);
     await run({check,clickText,clickAt,expectText,has,semantics,send,evaluate,screenshot,
-      until,exportFile,restoreFile,root,output,origin,
+      until,exportFile,restoreFile,selectFile,root,output,origin,
       upload:async(file)=>{chooser=null;await clickText('选择 CSV 文件',true);await until(()=>chooser,'CSV file chooser');await send('DOM.setFileInputFiles',{files:[file],backendNodeId:chooser.backendNodeId});},
     });
   } else {
@@ -238,12 +238,14 @@ try {
   await check('create training via UI and download a real JSON file', async () => {
     await clickText('开始训练'); await clickText('添加动作');
     await until(() => has('胸'), 'exercise picker data ready');
+    await clickAt(100,166);
     await send('Input.insertText', { text: '深蹲' }); await clickText('深蹲');
+    await clickText('添加 1 个动作',true);
     await clickText('完成这组'); await clickText('结束训练'); await expectText('160'); await clickText('完成', true);
     await clickText('设置', true); await clickText('深色', true);
     baseline = await exportFile('01-original-backup');
     assert.equal(baseline.data.format, 'gym-tracker-backup');
-    assert.equal(baseline.data.version, 2); assert.equal(baseline.data.schemaVersion, 4);
+    assert.equal(baseline.data.version, 3); assert.equal(baseline.data.schemaVersion, 5);
     assert.equal(baseline.data.data.sessions.length, 1);
     assert.equal(baseline.data.data.sets[0].weight, 20); assert.equal(baseline.data.data.sets[0].reps, 8);
     assert(baseline.data.data.settings.some(row => row.key === 'theme_mode' && row.value === 'dark'));

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../ui/theme.dart';
+import '../../domain/format.dart';
+import '../../domain/exercise_preferences.dart';
 import '../../ui/tokens.dart';
 
 /// 可拖动调值的大数字。
@@ -17,6 +19,7 @@ class DragNumber extends StatefulWidget {
   final double max;
   final ValueChanged<double> onChanged;
   final String unit;
+  final VoidCallback? onChangeEnd;
 
   /// 拖动灵敏度：每多少逻辑像素走一档。旧项目实测 12dp/档手感合适。
   final double pixelsPerStep;
@@ -29,6 +32,7 @@ class DragNumber extends StatefulWidget {
     this.min = 0,
     this.max = 500,
     this.unit = 'kg',
+    this.onChangeEnd,
     this.pixelsPerStep = 12,
   });
 
@@ -54,14 +58,15 @@ class _DragNumberState extends State<DragNumber> {
     if (steps == 0) return;
     _accumulated -= steps * widget.pixelsPerStep;
 
-    final next = (widget.value + steps * widget.step).clamp(
-      widget.min,
-      widget.max,
+    final next = adjustWeight(
+      widget.value,
+      widget.step,
+      steps,
+      min: widget.min,
+      max: widget.max,
     );
-    if (next != widget.value) widget.onChanged(_round(next));
+    if (next != widget.value) widget.onChanged(next);
   }
-
-  double _round(double v) => (v / widget.step).round() * widget.step;
 
   @override
   Widget build(BuildContext context) {
@@ -69,15 +74,15 @@ class _DragNumberState extends State<DragNumber> {
     return GestureDetector(
       onVerticalDragStart: _onDragStart,
       onVerticalDragUpdate: _onDragUpdate,
+      onVerticalDragEnd: (_) => widget.onChangeEnd?.call(),
+      onVerticalDragCancel: () => widget.onChangeEnd?.call(),
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             // 整数不显示小数点，22.5 显示一位 —— tabularFigures 保证不抖
-            widget.value == widget.value.roundToDouble()
-                ? widget.value.toInt().toString()
-                : widget.value.toStringAsFixed(1),
+            formatWeightKg(widget.value),
             style: TextStyle(
               fontSize: AppFontSize.display,
               fontWeight: FontWeight.w700,

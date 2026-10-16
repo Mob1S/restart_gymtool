@@ -191,8 +191,7 @@ int _bestIndex(List<double?> values) {
 ///
 /// 与 `record_page` 里那个 `_fmt` 同一条规则：显示成 `60.0` 会让人以为
 /// 重量的精度到 0.1 kg。
-String _fmtKg(double v) =>
-    v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+String _fmtKg(double v) => formatWeightKg(v);
 
 /// 一张卡：标题 + 最好值 + 日期 + 折线。
 ///

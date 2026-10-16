@@ -102,7 +102,7 @@ void main() {
       isEmpty,
     );
     await migrate(exec);
-    expect(await getSchemaVersion(exec), 4);
+    expect(await getSchemaVersion(exec), 5);
     await exec.run("INSERT INTO split_template VALUES ('p','推日',0,1)");
     expect(
       (await exec.first<Map<String, Object?>>('SELECT id FROM session'))!['id'],

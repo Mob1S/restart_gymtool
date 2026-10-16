@@ -25,6 +25,11 @@ String _column(String field) =>
     field.replaceAllMapped(RegExp('[A-Z]'), (m) => '_${m[0]!.toLowerCase()}');
 
 const _tables = {
+  'exercisePreferences': _Table(
+    'exercise_preference',
+    ['exerciseId', 'weightStepMilli', 'isFavorite', 'equipmentNote'],
+    {'isFavorite'},
+  ),
   'exercises': _Table(
     'exercise',
     [
@@ -154,12 +159,14 @@ Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
       'session',
       'template_exercise',
       'split_template',
+      'exercise_preference',
       'exercise',
     ]) {
       await tx.run('DELETE FROM $table');
     }
     for (final key in [
       'exercises',
+      'exercisePreferences',
       'templates',
       'templateExercises',
       'sessions',

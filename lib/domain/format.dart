@@ -76,3 +76,10 @@ String formatDuration(int seconds) {
   if (hours > 0) return '$hours 小时 $minutes 分';
   return '$minutes 分 ${secs.toString().padLeft(2, '0')} 秒';
 }
+
+/// Actual weight, preserving hundredths; finer imported weights are approximate.
+String formatWeightKg(double value) {
+  final rounded = (value * 100).round() / 100;
+  final text = rounded.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+  return (value - rounded).abs() > 1e-9 ? '≈$text' : text;
+}

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../data/db/sql_executor.dart';
 import '../data/repositories/record_management_repo.dart';
 import '../domain/record_management.dart';
+import '../domain/workout_edit.dart';
 import 'active_session_controller.dart';
 
 class RecordManagementController extends ChangeNotifier {
@@ -27,6 +28,15 @@ class RecordManagementController extends ChangeNotifier {
     message = null;
     _notify();
     try {
+      if (active.session?.id == id) {
+        final result = await active.flushPendingWeight();
+        if (active.writing ||
+            (result != WorkoutWriteResult.saved &&
+                result != WorkoutWriteResult.unchanged)) {
+          message = '重量尚未保存，请返回训练重试';
+          return null;
+        }
+      }
       return await inspectSessionDeletion(exec, id);
     } catch (_) {
       message = '无法读取这场训练，请重试';

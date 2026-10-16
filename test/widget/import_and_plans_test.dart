@@ -88,11 +88,13 @@ void main() {
       await settle(t);
       await t.tap(find.widgetWithText(ListTile, '深蹲'));
       await settle(t);
+      await tap(t, '添加 1 个动作');
       await tap(t, '添加动作');
       await t.enterText(find.widgetWithText(TextField, '搜索动作'), '深蹲');
       await settle(t);
       await t.tap(find.widgetWithText(ListTile, '深蹲'));
       await settle(t);
+      await tap(t, '添加 1 个动作');
       await t.runAsync(() async {
         expect(await listTemplates(db), isEmpty);
       });

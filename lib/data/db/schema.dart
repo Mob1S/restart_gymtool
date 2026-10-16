@@ -99,3 +99,12 @@ CREATE TABLE IF NOT EXISTS template_exercise (
 );
 CREATE INDEX IF NOT EXISTS idx_template_exercise_template ON template_exercise(template_id);
 ''';
+
+const createExercisePreferencesSql = """
+CREATE TABLE IF NOT EXISTS exercise_preference (
+  exercise_id TEXT PRIMARY KEY REFERENCES exercise(id) ON DELETE CASCADE,
+  weight_step_milli INTEGER NOT NULL DEFAULT 2500 CHECK(weight_step_milli IN (500,1000,1250,2500,5000)),
+  is_favorite INTEGER NOT NULL DEFAULT 0 CHECK(is_favorite IN (0,1)),
+  equipment_note TEXT NOT NULL DEFAULT '' CHECK(length(equipment_note)<=500)
+);
+""";

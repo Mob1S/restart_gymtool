@@ -152,10 +152,16 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                 onPressed: c.busy
                     ? null
                     : () async {
-                        final e = await showExercisePicker(context);
+                        final e = await showExerciseMultiPicker(context);
                         if (e != null && mounted) {
-                          setState(() => _names[e.id] = e.name);
-                          c.addExercise(e.id);
+                          setState(() {
+                            for (final exercise in e) {
+                              _names[exercise.id] = exercise.name;
+                            }
+                          });
+                          c.addExercises(
+                            e.map((exercise) => exercise.id).toList(),
+                          );
                         }
                       },
                 child: const Text('添加动作'),

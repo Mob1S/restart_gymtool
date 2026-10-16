@@ -84,7 +84,7 @@ async function evaluate(expression) {
 }
 const semanticsExpression = `Array.from(document.querySelectorAll('flt-semantics')).map(e => {
   const r = e.getBoundingClientRect();
-  return {text: e.getAttribute('aria-label') || e.innerText || '', role: e.getAttribute('role'),
+  return {text: e.getAttribute('aria-label') || Array.from(e.querySelectorAll('input,textarea')).map(i=>i.getAttribute('aria-label') || i.placeholder || '').filter(Boolean).join('\\n') || e.innerText || '', role: e.getAttribute('role'),
     x: r.x, y: r.y, width: r.width, height: r.height};
 }).filter(e => e.width && e.height)`;
 async function semantics() {
@@ -105,7 +105,7 @@ async function clickAt(x, y) {
 }
 async function clickText(text, exact = false) {
   const element = await until(async () => {
-    const matches = (await semantics()).filter(e => exact ? e.text === text : e.text.includes(text));
+    const matches = (await semantics()).filter(e => (exact ? e.text === text : e.text.includes(text)) && (text.startsWith('收藏 ') || !e.text.startsWith('收藏 ')));
     return matches.sort((a, b) => a.width * a.height - b.width * b.height)[0];
   }, `clickable text: ${text}`);
   await clickAt(element.x + element.width / 2, element.y + element.height / 2);
@@ -176,8 +176,10 @@ try {
     await clickText('训练', true);
     await clickText('开始训练');
     await clickText('添加动作');
+    await clickAt(100,166);
     await send('Input.insertText', { text: '深蹲' });
     await clickText('深蹲');
+    await clickText('添加 1 个动作',true);
     await expectText('完成这组');
     await screenshot('03-record');
     await clickText('完成这组');
@@ -232,7 +234,7 @@ try {
     await expectText('20 kg');
     const weight = (await semantics()).find(e => e.text === '20 kg');
     assert(weight, 'Weight control must show 20 kg before editing.');
-    const plus = (await semantics()).filter(e => e.role === 'button' && e.text === '' &&
+    const plus = (await semantics()).filter(e => e.role === 'button' && e.text === '增加' &&
       e.x > weight.x + weight.width / 2 && e.y >= weight.y + weight.height &&
       e.y < weight.y + weight.height + 100).sort((a, b) => a.y - b.y)[0];
     assert(plus, 'Weight increment control must be visible.');

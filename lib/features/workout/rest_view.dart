@@ -21,13 +21,17 @@ import 'breathing_dot.dart';
 class RestView extends StatefulWidget {
   final int restStartedAt;
   final int nextSetNumber;
-  final VoidCallback onBeginNextSet;
+  final VoidCallback? onBeginNextSet;
+  final String? exerciseName;
+  final List<Widget> details;
 
   const RestView({
     super.key,
     required this.restStartedAt,
     required this.nextSetNumber,
     required this.onBeginNextSet,
+    this.exerciseName,
+    this.details = const [],
   });
 
   @override
@@ -67,6 +71,7 @@ class _RestViewState extends State<RestView> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          if (widget.exerciseName != null) Text(widget.exerciseName!),
           // 呼吸点告诉用户「它真的在走」，而不是一个静止的 00:00
           const BreathingDot(),
           const SizedBox(height: AppSpacing.lg),
@@ -88,7 +93,8 @@ class _RestViewState extends State<RestView> {
               color: c.textTertiary,
             ),
           ),
-          const SizedBox(height: AppSpacing.xxl),
+          ...widget.details,
+          const SizedBox(height: AppSpacing.lg),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
             child: PrimaryButton(
