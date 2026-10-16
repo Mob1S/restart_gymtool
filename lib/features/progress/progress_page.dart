@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../state/data_revision_loader.dart';
+
 // 执行器从**仓储层**拿，不从 data/db/ 直接拿 —— 见 executor_access.dart 的说明
 import '../../data/repositories/executor_access.dart';
 import '../../data/repositories/exercise_repo.dart';
@@ -25,26 +27,22 @@ class ProgressPage extends StatefulWidget {
   State<ProgressPage> createState() => _ProgressPageState();
 }
 
-class _ProgressPageState extends State<ProgressPage> {
+class _ProgressPageState extends State<ProgressPage>
+    with DataRevisionLoader<ProgressPage> {
   List<ExerciseProgressRow>? _rows;
   Map<String, String> _nameById = const {};
   bool _loading = true;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  Future<void> reloadData() => _load();
 
   Future<void> _load() async {
     final exec = context.read<SqlExecutor>();
     final facts = await listAllCompletedSetFacts(exec);
     // 名字**一次全取**，不按行逐个 `getExercise` —— 那正是 N+1 的形状，
     // 而这一页要的只是一张 id → 名字的映射表。
-    // 代价（明确接受）：`listExercises` 不含已归档的动作，被归档的旧动作会落到
-    // 「未知动作」上。今天没有任何入口能归档动作；真出现时也只是名字显示不出来，
-    // **不崩**。
-    final exercises = await listExercises(exec);
+    // 导入和旧备份可以引用归档动作，历史成绩仍须显示其原名。
+    final exercises = await listExercises(exec, includeArchived: true);
 
     if (!mounted) return;
     setState(() {

@@ -202,12 +202,19 @@ Future<List<SessionExercise>> listSessionExercises(
   final rows = await exec.all<Map<String, Object?>>(
     '''SELECT $sessionExerciseColumns FROM session_exercise
        WHERE session_id = ?
-       ORDER BY position ASC''',
+       ORDER BY position ASC, rowid ASC''',
     [sessionId],
   );
   return rows
       .map((m) => toSessionExercise(SessionExerciseRow.fromMap(m)))
       .toList();
+}
+
+Future<String?> findLatestTemplateId(SqlExecutor exec) async {
+  final row = await exec.first<Map<String, Object?>>(
+    'SELECT template_id FROM session WHERE finished_at IS NOT NULL AND template_id IS NOT NULL ORDER BY started_at DESC,rowid DESC LIMIT 1',
+  );
+  return row?['template_id'] as String?;
 }
 
 /// 找出这场训练里**最近有动作的那一组**所属的 `session_exercise`。

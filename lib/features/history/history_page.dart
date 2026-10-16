@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../state/data_revision_loader.dart';
+
 // 执行器从**仓储层**拿，不从 data/db/ 直接拿 —— 见 executor_access.dart 的说明
 import '../../data/repositories/executor_access.dart';
 import '../../data/repositories/session_repo.dart';
@@ -23,15 +25,13 @@ class HistoryPage extends StatefulWidget {
   State<HistoryPage> createState() => _HistoryPageState();
 }
 
-class _HistoryPageState extends State<HistoryPage> {
+class _HistoryPageState extends State<HistoryPage>
+    with DataRevisionLoader<HistoryPage> {
   List<SessionSummaryRow>? _rows;
   bool _loading = true;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  Future<void> reloadData() => _load();
 
   Future<void> _load() async {
     final exec = context.read<SqlExecutor>();

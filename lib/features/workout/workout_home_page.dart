@@ -11,6 +11,12 @@ import '../../ui/tokens.dart';
 import '../../ui/widgets/app_card.dart';
 import '../../ui/widgets/primary_button.dart';
 import 'conflict_dialog.dart';
+import '../../data/repositories/executor_access.dart';
+import '../../data/repositories/workout_plan_repo.dart';
+import '../../data/repositories/template_repo.dart';
+import '../../domain/plans.dart';
+import '../plans/plan_picker.dart';
+import '../../state/data_revision.dart';
 
 /// 训练首页。它要回答两个问题：
 /// 1. 有没有没练完的（「继续 今天 15:20 的训练 · 深蹲 等 3 个动作 · 已记 12 组」）
@@ -24,6 +30,22 @@ class WorkoutHomePage extends StatefulWidget {
 
 class _WorkoutHomePageState extends State<WorkoutHomePage> {
   WorkoutSession? _active;
+  PlannedWorkout? _planned;
+  String? _preferred;
+  String? _message;
+  bool _starting = false;
+  int? _revision;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final revision = context.watch<DataRevision?>()?.value ?? 0;
+    if (_revision == revision) return;
+    _revision = revision;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadPlan();
+    });
+  }
 
   @override
   void initState() {
@@ -40,40 +62,87 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
     await c.resume();
     if (!mounted) return;
     setState(() => _active = c.session);
+    await _loadPlan();
+  }
+
+  Future<void> _loadPlan() async {
+    try {
+      final plan = await loadNextWorkout(
+        context.read<SqlExecutor>(),
+        preferredTemplateId: _preferred,
+      );
+      if (mounted) setState(() => _planned = plan);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _preferred = null;
+          _planned = null;
+          _message = '计划已变化，请重新选择';
+        });
+      }
+    }
+  }
+
+  Future<void> _pickPlan() async {
+    final plans = await listTemplates(context.read<SqlExecutor>());
+    if (!mounted) return;
+    final id = await showPlanPicker(context, plans);
+    if (id == null || !mounted) return;
+    _preferred = id;
+    await _loadPlan();
   }
 
   Future<void> _startNew() async {
-    final c = context.read<ActiveSessionController>();
+    if (_starting) return;
+    setState(() => _starting = true);
+    try {
+      final c = context.read<ActiveSessionController>();
 
-    // 先刷新一次 _active，避免竞态
-    await c.resume();
-    if (!mounted) return;
-    setState(() => _active = c.session);
+      // 先刷新一次 _active，避免竞态
+      await c.resume();
+      if (!mounted) return;
+      setState(() => _active = c.session);
 
-    if (_active != null) {
-      final choice = await showConflictDialog(
-        context,
-        description: _describe(c),
+      if (_active != null) {
+        final choice = await showConflictDialog(
+          context,
+          description: _describe(c),
+        );
+        if (!mounted) return;
+
+        switch (choice) {
+          case ConflictChoice.resume:
+            context.push('/session/${_active!.id}');
+            return;
+          case ConflictChoice.endAndStartNew:
+            await c.endWorkout();
+            await _loadPlan();
+            break;
+          case ConflictChoice.cancel:
+          case null:
+            return;
+        }
+      }
+
+      final result = await c.startNew(
+        preferredTemplateId: _preferred,
+        selectionToken: _planned?.selectionToken,
       );
       if (!mounted) return;
-
-      switch (choice) {
-        case ConflictChoice.resume:
-          context.push('/session/${_active!.id}');
-          return;
-        case ConflictChoice.endAndStartNew:
-          await c.endWorkout();
-          break;
-        case ConflictChoice.cancel:
-        case null:
-          return;
+      if (result == StartResult.started) {
+        await context.push('/session/${c.session!.id}');
+        if (mounted) await _probe();
+      } else if (result == StartResult.planChanged) {
+        _preferred = null;
+        await _loadPlan();
+        if (mounted) setState(() => _message = '计划已变化，请核对后重新开始');
+      } else if (result == StartResult.refreshFailed) {
+        if (mounted) setState(() => _message = '训练已开始，载入失败，请从继续训练入口重试');
       }
-    }
-
-    final result = await c.startNew();
-    if (!mounted) return;
-    if (result == StartResult.started) {
-      context.push('/session/${c.session!.id}');
+    } catch (_) {
+      if (mounted) setState(() => _message = '无法开始训练，本次未创建新训练，请重试');
+    } finally {
+      if (mounted) setState(() => _starting = false);
     }
   }
 
@@ -101,8 +170,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: ListView(
         children: [
           const SizedBox(height: AppSpacing.xl),
           Text(
@@ -143,10 +211,38 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
 
           if (c.session != null) const SizedBox(height: AppSpacing.lg),
 
+          if (_message != null) Text(_message!),
+          if (_planned != null)
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _planned!.templateId == null
+                        ? '沿用最近一次训练'
+                        : '本次：${_planned!.name}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text('${_planned!.exerciseIds.length} 个动作'),
+                  TextButton(
+                    onPressed: _starting ? null : _pickPlan,
+                    child: const Text('换一个计划'),
+                  ),
+                  TextButton(
+                    onPressed: () => context.push('/plans').then((_) {
+                      if (mounted) _loadPlan();
+                    }),
+                    child: const Text('管理训练计划'),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 16),
+
           PrimaryButton(
             label: c.session != null ? '开始新训练' : '开始训练',
             icon: Icons.play_arrow_rounded,
-            onPressed: _startNew,
+            onPressed: _starting ? null : _startNew,
           ),
         ],
       ),

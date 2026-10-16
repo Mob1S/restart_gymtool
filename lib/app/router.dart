@@ -9,6 +9,9 @@ import '../features/workout/record_page.dart';
 import '../features/workout/summary_page.dart';
 import '../features/workout/workout_home_page.dart';
 import 'app_shell.dart';
+import '../features/import/import_page.dart';
+import '../features/plans/plan_list_page.dart';
+import '../features/plans/plan_editor_page.dart';
 
 /// 路由表。
 ///
@@ -17,6 +20,17 @@ import 'app_shell.dart';
 GoRouter buildRouter() => GoRouter(
   initialLocation: '/',
   routes: [
+    GoRoute(path: '/plans', builder: (_, _) => const PlanListPage()),
+    GoRoute(path: '/plans/new', builder: (_, _) => const PlanEditorPage()),
+    GoRoute(
+      path: '/plans/:id/edit',
+      builder: (_, s) => PlanEditorPage(id: s.pathParameters['id']!),
+    ),
+    GoRoute(path: '/records/import', builder: (_, _) => const ImportPage()),
+    GoRoute(
+      path: '/records/manual',
+      builder: (_, _) => const ImportPage(manual: true),
+    ),
     ShellRoute(
       builder: (context, state, child) => AppShell(child: child),
       routes: [

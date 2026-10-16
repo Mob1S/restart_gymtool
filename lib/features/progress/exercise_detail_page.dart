@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../state/data_revision_loader.dart';
+
 // 执行器从**仓储层**拿，不从 data/db/ 直接拿 —— 见 executor_access.dart 的说明
 import '../../data/repositories/executor_access.dart';
 import '../../data/repositories/exercise_repo.dart';
@@ -28,7 +30,8 @@ class ExerciseDetailPage extends StatefulWidget {
   State<ExerciseDetailPage> createState() => _ExerciseDetailPageState();
 }
 
-class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
+class _ExerciseDetailPageState extends State<ExerciseDetailPage>
+    with DataRevisionLoader<ExerciseDetailPage> {
   final PageController _controller = PageController();
   int _page = 0;
 
@@ -40,10 +43,7 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   bool _loading = true;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  Future<void> reloadData() => _load();
 
   @override
   void dispose() {

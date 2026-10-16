@@ -99,9 +99,12 @@ int compareExercises(Exercise a, Exercise b) {
 /// 列出全部**未归档**的动作，已按肌群 + 拼音排好序。
 ///
 /// 排序在 Dart 里做而不是 SQL 里，原因见 [compareExercises]。
-Future<List<Exercise>> listExercises(SqlExecutor exec) async {
+Future<List<Exercise>> listExercises(
+  SqlExecutor exec, {
+  bool includeArchived = false,
+}) async {
   final rows = await exec.all<Map<String, Object?>>(
-    'SELECT $exerciseColumns FROM exercise WHERE is_archived = 0',
+    'SELECT $exerciseColumns FROM exercise${includeArchived ? '' : ' WHERE is_archived = 0'}',
   );
   final list = rows.map((m) => toExercise(ExerciseRow.fromMap(m))).toList();
   list.sort(compareExercises);

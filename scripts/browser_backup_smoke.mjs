@@ -12,7 +12,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const webRoot = path.join(root, 'build', 'web');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-const output = path.join(root, 'build', 'acceptance', `browser-backup-${stamp}`);
+const feature = process.env.GYM_BROWSER_FEATURE;
+assert(!feature || ['import', 'plans'].includes(feature));
+const output = path.join(root, 'build', 'acceptance', `browser-${feature || 'backup'}-${stamp}`);
 const chromePath = process.env.CHROME_EXECUTABLE || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
   'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
@@ -225,9 +227,17 @@ try {
   });
   await browserSend('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: downloadDirectory, eventsEnabled: true });
   await send('Page.setInterceptFileChooserDialog', { enabled: true });
+  if (feature) {
+    const { run } = await import(`./browser_${feature}_smoke.mjs`);
+    await run({check,clickText,clickAt,expectText,has,semantics,send,evaluate,screenshot,
+      until,exportFile,restoreFile,root,output,origin,
+      upload:async(file)=>{chooser=null;await clickText('选择 CSV 文件',true);await until(()=>chooser,'CSV file chooser');await send('DOM.setFileInputFiles',{files:[file],backendNodeId:chooser.backendNodeId});},
+    });
+  } else {
   let baseline;
   await check('create training via UI and download a real JSON file', async () => {
     await clickText('开始训练'); await clickText('添加动作');
+    await until(() => has('胸'), 'exercise picker data ready');
     await send('Input.insertText', { text: '深蹲' }); await clickText('深蹲');
     await clickText('完成这组'); await clickText('结束训练'); await expectText('160'); await clickText('完成', true);
     await clickText('设置', true); await clickText('深色', true);
@@ -294,6 +304,7 @@ try {
     assert.equal(restored.data.exercises.length, 0); assert.equal(restored.data.sessions.length, 0);
     await clickText('历史', true); await expectText('还没有已完成的训练'); await screenshot('10-final-empty');
   });
+  }
   assert.equal(errors.length, 0, `Browser runtime errors: ${JSON.stringify(errors)}`);
 } catch (error) {
   failed = true;

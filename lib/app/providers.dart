@@ -10,6 +10,10 @@ import '../data/repositories/settings_repo.dart';
 import '../state/active_session_controller.dart';
 import '../state/theme_controller.dart';
 import '../state/backup_controller.dart';
+import '../state/data_revision.dart';
+import '../state/import_controller.dart';
+import '../state/plan_controller.dart';
+import '../state/record_management_controller.dart';
 import '../ui/theme.dart';
 import '../ui/tokens.dart';
 import 'router.dart';
@@ -32,6 +36,10 @@ class _AppBootstrapState extends State<AppBootstrap> {
   ActiveSessionController? _session;
   ThemeController? _theme;
   BackupController? _backup;
+  ImportController? _import;
+  PlanController? _plans;
+  RecordManagementController? _records;
+  final _revision = DataRevision();
   Object? _error;
 
   /// **router 只建一次。** 写在 `build()` 里的话每次重建都会新建一个
@@ -52,15 +60,27 @@ class _AppBootstrapState extends State<AppBootstrap> {
       final theme = ThemeController(exec);
       await theme.load(); // 不放行子树直到它完成 —— 否则每次启动闪一帧
 
-      final session = ActiveSessionController(exec);
+      final session = ActiveSessionController(
+        exec,
+        onDataChanged: _revision.changed,
+      );
       final backup = BackupController(
         exec: exec,
         files: widget.backupFiles ?? PlatformBackupFileStore(),
         onRestored: () async {
+          _revision.changed();
           session.reset();
           await session.resume();
           await theme.load();
           _router.go('/');
+        },
+      );
+
+      final importer = ImportController(
+        exec: exec,
+        files: widget.backupFiles ?? PlatformBackupFileStore(),
+        onCommitted: (_) async {
+          _revision.changed();
         },
       );
 
@@ -70,6 +90,17 @@ class _AppBootstrapState extends State<AppBootstrap> {
         _session = session;
         _theme = theme;
         _backup = backup;
+        _import = importer;
+        _plans = PlanController(
+          exec,
+          onChanged: _revision.changed,
+          onDeleted: session.detachTemplate,
+        );
+        _records = RecordManagementController(
+          exec,
+          active: session,
+          onChanged: _revision.changed,
+        );
       });
     } catch (e) {
       if (mounted) setState(() => _error = e);
@@ -108,6 +139,12 @@ class _AppBootstrapState extends State<AppBootstrap> {
         ChangeNotifierProvider<ActiveSessionController>.value(value: session),
         ChangeNotifierProvider<ThemeController>.value(value: theme),
         ChangeNotifierProvider<BackupController>.value(value: _backup!),
+        ChangeNotifierProvider<DataRevision>.value(value: _revision),
+        ChangeNotifierProvider<ImportController>.value(value: _import!),
+        ChangeNotifierProvider<PlanController>.value(value: _plans!),
+        ChangeNotifierProvider<RecordManagementController>.value(
+          value: _records!,
+        ),
       ],
       // 在 Provider 之下读主题，所以这一层必须是独立 widget
       child: _ThemedApp(router: _router),
@@ -116,6 +153,10 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
   @override
   void dispose() {
+    _plans?.dispose();
+    _records?.dispose();
+    _import?.dispose();
+    _revision.dispose();
     _backup?.dispose();
     _session?.dispose();
     _theme?.dispose();

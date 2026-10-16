@@ -332,7 +332,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('进步列表：名字取不到时写「未知动作」，不崩', (tester) async {
+  testWidgets('进步列表：归档动作仍显示原名和历史成绩', (tester) async {
     final exec = await seededDb(tester);
     addTearDown(exec.close);
     final squatId = await seedSession(
@@ -342,8 +342,7 @@ void main() {
       startedAt: nov13(),
       sets: const [(60, 10)],
     );
-    // 归档一个练过的动作：`listExercises` 过滤了 is_archived，取不到它。
-    // （今天没有任何入口能归档动作，这是「取不到名字」的唯一现实路径。）
+    // CSV 和旧备份可以保留归档引用，列表不能把真实名称替换为未知动作。
     await tester.runAsync(
       () => exec.run('UPDATE exercise SET is_archived = 1 WHERE id = ?', [
         squatId,
@@ -352,8 +351,7 @@ void main() {
 
     await pumpScreen(tester, exec, const Scaffold(body: ProgressPage()));
 
-    // 名字没了，但这一行照常显示 —— 有曲线就不该整行消失
-    expect(find.text('未知动作'), findsOneWidget);
+    expect(find.text('深蹲'), findsOneWidget);
     expect(find.text('最近 11月13日 周一 · 最重 60 kg × 10'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

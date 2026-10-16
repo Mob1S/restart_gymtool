@@ -16,6 +16,9 @@ import 'exercise_picker.dart';
 import 'exercise_strip.dart';
 import 'number_stepper.dart';
 import 'rest_view.dart';
+import 'remove_exercise_dialog.dart';
+import '../history/delete_session_dialog.dart';
+import '../../state/record_management_controller.dart';
 
 /// 记录页。**屏幕上只呈现当前这一组** —— 拇指永远停在同一个位置，
 /// 不需要瞄准（规格 §6.1 的方案 B）。
@@ -34,6 +37,7 @@ class _RecordPageState extends State<RecordPage> {
   /// 拖动过程中不该每一帧都写库，**只有点「完成这组」才落盘**。
   double? _weight;
   int? _reps;
+  bool _ready = false;
 
   @override
   void initState() {
@@ -44,6 +48,7 @@ class _RecordPageState extends State<RecordPage> {
       final c = context.read<ActiveSessionController>();
       await c.resume();
       _syncFromPending(c);
+      if (mounted) setState(() => _ready = true);
     });
   }
 
@@ -77,10 +82,9 @@ class _RecordPageState extends State<RecordPage> {
   /// 它不存在时 [ActiveSessionController.completeCurrentSet] 会静默 return，
   /// 所以这里为 null 就意味着「完成这组」不该可点。
   SetEntry? _pendingOf(ActiveSessionController c) {
-    if (c.currentIndex < 0 || c.currentIndex >= c.exercises.length) return null;
-    return _firstOrNull(
-      c.exercises[c.currentIndex].sets.where((s) => !s.isCompleted),
-    );
+    final active = c.currentExercise;
+    if (active == null) return null;
+    return _firstOrNull(active.sets.where((s) => !s.isCompleted));
   }
 
   Future<void> _complete(ActiveSessionController c) async {
@@ -113,13 +117,31 @@ class _RecordPageState extends State<RecordPage> {
     if (id != null) context.go('/summary/$id');
   }
 
+  Future<void> _remove(ActiveSessionController c) async {
+    final id = c.currentSessionExerciseId;
+    if (id == null) return;
+    try {
+      final preview = await c.previewExerciseRemoval(id);
+      if (preview == null || !mounted) return;
+      final choice = await showRemoveExerciseDialog(context, preview);
+      if (choice == null) return;
+      await c.removeExercise(preview, choice);
+      _syncFromPending(c);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.watch<ActiveSessionController>();
     final sc = appColors(context);
 
     final session = c.session;
-    if (session == null) {
+    if (session == null || session.id != widget.sessionId) {
       return Scaffold(
         appBar: AppBar(title: const Text('记录')),
         body: const EmptyState(message: '这场训练不在了，可能已被结束'),
@@ -131,8 +153,33 @@ class _RecordPageState extends State<RecordPage> {
         backgroundColor: sc.background,
         title: Text(session.name ?? '训练'),
         actions: [
+          if (c.recordingExercises.length > 1)
+            IconButton(
+              tooltip: '移除当前动作',
+              onPressed: !_ready || c.loading ? null : () => _remove(c),
+              icon: const Icon(Icons.playlist_remove),
+            ),
+          if (context.watch<RecordManagementController?>() != null)
+            IconButton(
+              tooltip: '删除这场训练',
+              onPressed:
+                  !_ready ||
+                      c.loading ||
+                      context.watch<RecordManagementController?>()?.busy == true
+                  ? null
+                  : () async {
+                      if (await showDeleteSessionDialog(
+                            context,
+                            widget.sessionId,
+                          ) &&
+                          context.mounted) {
+                        context.go('/');
+                      }
+                    },
+              icon: const Icon(Icons.delete_outline),
+            ),
           TextButton(
-            onPressed: () => _endWorkout(c),
+            onPressed: !_ready || c.loading ? null : () => _endWorkout(c),
             child: const Text('结束训练'),
           ),
         ],
@@ -142,17 +189,22 @@ class _RecordPageState extends State<RecordPage> {
           children: [
             // ── 动作条：换动作不必退出记录界面 ──
             ExerciseStrip(
-              exercises: c.exercises,
+              exercises: c.recordingExercises,
               currentIndex: c.currentIndex,
               onSelect: (i) {
+                if (!_ready || c.loading) return;
                 c.setCurrentIndex(i);
                 _syncFromPending(c);
               },
-              onAdd: () => _addExercise(c),
+              onAdd: () {
+                if (_ready && !c.loading) _addExercise(c);
+              },
             ),
 
             Expanded(
-              child: c.exercises.isEmpty
+              child: !_ready || c.loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : c.recordingExercises.isEmpty
                   // 空训练**不是死路** —— 旧项目在这里踩过坑：
                   // 只写一句「这次训练还没有动作」，没有任何添加入口
                   ? EmptyState(
@@ -172,7 +224,7 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   Widget _body(ActiveSessionController c, AppColors sc) {
-    final active = c.exercises[c.currentIndex];
+    final active = c.currentExercise!;
     final total = active.sets.length;
     final completed = active.sets.where((s) => s.isCompleted).length;
     final resting = _firstOrNull(

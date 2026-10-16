@@ -7,6 +7,11 @@ import '../data/repositories/set_repo.dart';
 import '../domain/rest.dart';
 import '../domain/session_label.dart';
 import '../domain/types.dart';
+import '../domain/exercise_visibility.dart';
+import '../domain/plans.dart';
+import '../domain/record_management.dart';
+import '../data/repositories/workout_plan_repo.dart';
+import '../data/repositories/record_management_repo.dart';
 
 const double defaultWeightKg = 20;
 const int defaultReps = 8;
@@ -15,7 +20,26 @@ const int defaultReps = 8;
 ///
 /// `conflict` 表示库里已经有一场进行中的训练，此时**没有**新建任何东西，
 /// 那一场已经装进 controller —— 界面据此问用户「接着练还是结束它」。
-enum StartResult { started, conflict }
+enum StartResult { started, conflict, busy, planChanged, refreshFailed }
+
+enum RemoveExerciseChoice { deleteRecorded, keepRecorded, cancel }
+
+class ExerciseRemovalPreview {
+  final String sessionId;
+  final String sessionExerciseId;
+  final String exerciseName;
+  final int completedSets;
+  final int visibleCount;
+  final String token;
+  const ExerciseRemovalPreview._(
+    this.sessionId,
+    this.sessionExerciseId,
+    this.exerciseName,
+    this.completedSets,
+    this.visibleCount,
+    this.token,
+  );
+}
 
 /// 记录界面上的一个动作卡片：动作本身 + 展示用的名字 + 它的全部组。
 ///
@@ -60,14 +84,27 @@ class ActiveExercise {
 /// 两处都能改状态必然对不上。
 class ActiveSessionController extends ChangeNotifier {
   final SqlExecutor _exec;
+  final VoidCallback? onDataChanged;
+  bool _starting = false;
+  bool _removing = false;
 
-  ActiveSessionController(this._exec);
+  ActiveSessionController(this._exec, {this.onDataChanged});
 
   /// 正在从库里载入（[resume] 期间为 true），界面据此显示加载态
   bool loading = false;
   WorkoutSession? session;
   List<ActiveExercise> exercises = [];
   int currentIndex = 0;
+  List<ActiveExercise> get recordingExercises =>
+      exercises.where((e) => isRecordingExercise(e.sets)).toList();
+  ActiveExercise? get currentExercise {
+    final visible = recordingExercises;
+    return currentIndex >= 0 && currentIndex < visible.length
+        ? visible[currentIndex]
+        : null;
+  }
+
+  String? get currentSessionExerciseId => currentExercise?.sessionExercise.id;
 
   /// 载入未结束的训练；没有就返回 false。
   Future<bool> resume() async {
@@ -75,11 +112,16 @@ class ActiveSessionController extends ChangeNotifier {
     notifyListeners();
     try {
       final found = await getActiveSession(_exec);
-      if (found == null) return false;
+      if (found == null) {
+        session = null;
+        exercises = [];
+        currentIndex = 0;
+        return false;
+      }
       final loaded = await _loadExercises(found.id);
       session = found;
       exercises = loaded;
-      currentIndex = await _resolveCurrentIndex(found.id, loaded);
+      currentIndex = await _resolveCurrentIndex(found.id, recordingExercises);
       return true;
     } finally {
       loading = false;
@@ -95,30 +137,68 @@ class ActiveSessionController extends ChangeNotifier {
   ///
   /// Phase 1 的动作来源是「复制上一次**已结束**训练的动作组合」；
   /// 分化计划的轮转留到后续 Phase，但**调用顺序现在就遵守**（见下）。
-  Future<StartResult> startNew({String? name}) async {
-    // 复用 resume 而不是另写一次查询：它会把那一场连动作带组一起装进
-    // controller，界面选「接着练」时直接导航过去就有东西可渲染 ——
-    // 只返回一个 id 的话，记录页会因为 controller 里没有 exercises
-    // 而误判成「这次训练还没有动作」。
-    if (await resume()) return StartResult.conflict;
+  Future<StartResult> startNew({
+    String? name,
+    String? preferredTemplateId,
+    String? selectionToken,
+  }) async {
+    if (_starting) return StartResult.busy;
+    _starting = true;
+    try {
+      // 复用 resume 而不是另写一次查询：它会把那一场连动作带组一起装进
+      // controller，界面选「接着练」时直接导航过去就有东西可渲染 ——
+      // 只返回一个 id 的话，记录页会因为 controller 里没有 exercises
+      // 而误判成「这次训练还没有动作」。
+      if (await resume()) return StartResult.conflict;
 
-    // 顺序不能反：**先探冲突（上面那行）→ 再定计划 → 才建 session**。
-    // 轮转的输入是「最近一场已结束训练用的模板」，先建出来的话这一场虽然
-    // finished_at 还是 NULL、不会污染那个查询，但「先建后定」很容易在后续
-    // 改动里被误用 listSessions 之类的接口把这一场算进去。
-    final created = await createSession(_exec, name: name, templateId: null);
+      // 顺序不能反：**先探冲突（上面那行）→ 再定计划 → 才建 session**。
+      // 轮转的输入是「最近一场已结束训练用的模板」，先建出来的话这一场虽然
+      // finished_at 还是 NULL、不会污染那个查询，但「先建后定」很容易在后续
+      // 改动里被误用 listSessions 之类的接口把这一场算进去。
+      WorkoutSession? created;
+      try {
+        created = await _exec.transaction((tx) async {
+          if (await getActiveSession(tx) != null) return null;
+          final plan = await readPlannedWorkout(
+            tx,
+            preferredTemplateId: preferredTemplateId,
+          );
+          if (selectionToken != null && selectionToken != plan.selectionToken) {
+            throw const PlanValidationException('计划已变化');
+          }
+          final s = await createSession(
+            tx,
+            name: name ?? plan.name,
+            templateId: plan.templateId,
+          );
+          for (final exerciseId in plan.exerciseIds) {
+            await _addExerciseWithFirstSet(tx, s.id, exerciseId);
+          }
+          return s;
+        });
+      } on PlanValidationException {
+        return StartResult.planChanged;
+      }
+      if (created == null) {
+        await resume();
+        return StartResult.conflict;
+      }
 
-    // listSessions 只返回已结束的，所以天然不会复制到一场还在进行中的训练
-    final previousIds = await _previousSessionExerciseIds();
-    for (final exerciseId in previousIds) {
-      await _addExerciseWithFirstSet(created.id, exerciseId);
+      session = created;
+      try {
+        exercises = await _loadExercises(created.id);
+      } catch (_) {
+        exercises = [];
+        currentIndex = 0;
+        notifyListeners();
+        return StartResult.refreshFailed;
+      }
+      currentIndex = 0;
+      notifyListeners();
+      return StartResult.started;
+    } finally {
+      _starting = false;
     }
-
-    session = created;
-    exercises = await _loadExercises(created.id);
-    currentIndex = 0;
-    notifyListeners();
-    return StartResult.started;
   }
 
   /// 往训练里加一个动作。
@@ -129,15 +209,16 @@ class ActiveSessionController extends ChangeNotifier {
     // 旧项目那个「同一场训练被接上第二次、第三次」的 bug 就是这么来的。
     if (current == null || current.finishedAt != null) return;
 
-    await _addExerciseWithFirstSet(current.id, exerciseId);
+    await _addExerciseWithFirstSet(_exec, current.id, exerciseId);
 
     exercises = await _loadExercises(current.id);
-    currentIndex = exercises.length - 1;
+    currentIndex = recordingExercises.length - 1;
     notifyListeners();
   }
 
   /// 切换当前正在记录的动作。**不写数据库** —— 它是纯界面状态。
   void setCurrentIndex(int index) {
+    if (index < 0 || index >= recordingExercises.length) return;
     currentIndex = index;
     notifyListeners();
   }
@@ -149,9 +230,8 @@ class ActiveSessionController extends ChangeNotifier {
   Future<void> completeCurrentSet(double weight, int reps) async {
     final current = session;
     if (current == null || current.finishedAt != null) return;
-    if (currentIndex < 0 || currentIndex >= exercises.length) return;
-
-    final active = exercises[currentIndex];
+    final active = currentExercise;
+    if (active == null) return;
     final pending = _firstOrNull(active.sets.where((s) => !s.isCompleted));
     if (pending == null) return;
 
@@ -177,7 +257,11 @@ class ActiveSessionController extends ChangeNotifier {
 
     final updated = await listSets(_exec, active.sessionExercise.id);
     exercises = List.of(exercises)
-      ..[currentIndex] = active.copyWith(sets: updated);
+      ..[exercises.indexWhere(
+        (e) => e.sessionExercise.id == active.sessionExercise.id,
+      )] = active.copyWith(
+        sets: updated,
+      );
     notifyListeners();
   }
 
@@ -187,9 +271,8 @@ class ActiveSessionController extends ChangeNotifier {
   Future<void> beginNextSet() async {
     final current = session;
     if (current == null || current.finishedAt != null) return;
-    if (currentIndex < 0 || currentIndex >= exercises.length) return;
-
-    final active = exercises[currentIndex];
+    final active = currentExercise;
+    if (active == null) return;
 
     // **会话级**查找，不是只看当前动作 —— 见 [_findAnyResting]。
     // 「开始下一组」的意思是「休息结束了」，与哪一段无关。
@@ -200,7 +283,11 @@ class ActiveSessionController extends ChangeNotifier {
 
     final updated = await listSets(_exec, active.sessionExercise.id);
     exercises = List.of(exercises)
-      ..[currentIndex] = active.copyWith(sets: updated);
+      ..[exercises.indexWhere(
+        (e) => e.sessionExercise.id == active.sessionExercise.id,
+      )] = active.copyWith(
+        sets: updated,
+      );
     notifyListeners();
   }
 
@@ -285,6 +372,7 @@ class ActiveSessionController extends ChangeNotifier {
     );
 
     reset();
+    onDataChanged?.call();
     return finishedId;
   }
 
@@ -367,12 +455,6 @@ class ActiveSessionController extends ChangeNotifier {
   ///
   /// [listSessions] 只返回**已结束**的训练，所以这里天然不会把一场还在
   /// 进行中的训练当成「上一次」。没有历史（第一次用）时返回空数组。
-  Future<List<String>> _previousSessionExerciseIds() async {
-    final previous = await listSessions(_exec, 1);
-    if (previous.isEmpty) return [];
-    final list = await listSessionExercises(_exec, previous.first.id);
-    return list.map((e) => e.exerciseId).toList();
-  }
 
   /// 往训练里加一个动作，并预建它的第一组。
   ///
@@ -385,18 +467,119 @@ class ActiveSessionController extends ChangeNotifier {
   /// 抽成私有函数是为了让 [startNew] 和 [addExercise] 共用同一条路径。
   /// 两处各写一遍必然漂移，而漂移的后果正是上面那个「按钮没反应」。
   Future<void> _addExerciseWithFirstSet(
+    SqlExecutor exec,
     String sessionId,
     String exerciseId,
   ) async {
-    final se = await addExerciseToSession(_exec, sessionId, exerciseId);
-    final last = await getLastPerformance(_exec, exerciseId, sessionId);
+    final se = await addExerciseToSession(exec, sessionId, exerciseId);
+    final last = await getLastPerformance(exec, exerciseId, sessionId);
     final template = last.isEmpty ? null : last.first;
     await addSet(
-      _exec,
+      exec,
       se.id,
       template?.weight ?? defaultWeightKg,
       template?.reps ?? defaultReps,
     );
+  }
+
+  Future<ExerciseRemovalPreview?> previewExerciseRemoval(String id) async {
+    final current = session;
+    if (current == null || current.finishedAt != null) return null;
+    return _exec.transaction((tx) => _removalPreview(tx, current.id, id));
+  }
+
+  Future<ExerciseRemovalPreview?> _removalPreview(
+    SqlExecutor tx,
+    String sessionId,
+    String id,
+  ) async {
+    final parent = await readSessionDeletion(tx, sessionId);
+    if (parent == null || parent.session.finishedAt != null) return null;
+    final children = await listSessionExercises(tx, sessionId);
+    var visible = 0;
+    ActiveExercise? target;
+    for (final e in children) {
+      final sets = await listSets(tx, e.id);
+      if (isRecordingExercise(sets)) visible++;
+      if (e.id == id) {
+        target = ActiveExercise(
+          sessionExercise: e,
+          exerciseName: (await getExercise(tx, e.exerciseId))?.name ?? '动作',
+          sets: sets,
+        );
+      }
+    }
+    if (target == null || !isRecordingExercise(target.sets)) return null;
+    return ExerciseRemovalPreview._(
+      sessionId,
+      id,
+      target.exerciseName,
+      target.sets.where((s) => s.isCompleted).length,
+      visible,
+      parent.token,
+    );
+  }
+
+  Future<bool> removeExercise(
+    ExerciseRemovalPreview preview,
+    RemoveExerciseChoice choice,
+  ) async {
+    if (choice == RemoveExerciseChoice.cancel || _removing) return false;
+    if (session?.id != preview.sessionId || session?.finishedAt != null) {
+      return false;
+    }
+    _removing = true;
+    final preferred = currentSessionExerciseId;
+    final index = currentIndex;
+    try {
+      await _exec.transaction((tx) async {
+        final current = await _removalPreview(
+          tx,
+          preview.sessionId,
+          preview.sessionExerciseId,
+        );
+        if (current == null || current.token != preview.token) {
+          throw const RecordManagementException('训练已变化，请重新确认移除');
+        }
+        if (current.visibleCount <= 1) {
+          throw const RecordManagementException('请至少保留一个可继续动作');
+        }
+        if (choice == RemoveExerciseChoice.keepRecorded &&
+            current.completedSets > 0) {
+          await retainCompletedSets(tx, preview.sessionExerciseId);
+        } else {
+          await deleteSessionExercise(tx, preview.sessionExerciseId);
+        }
+      });
+      onDataChanged?.call();
+      try {
+        exercises = await _loadExercises(preview.sessionId);
+      } catch (_) {
+        throw const RecordManagementException('动作已移除，请重新打开训练以刷新');
+      }
+      currentIndex = resolveRecordingIndex(
+        recordingExercises.map((e) => e.sessionExercise.id).toList(),
+        preferred,
+        index,
+      );
+      notifyListeners();
+      return true;
+    } finally {
+      _removing = false;
+    }
+  }
+
+  void detachTemplate(String templateId) {
+    final s = session;
+    if (s == null || s.templateId != templateId) return;
+    session = WorkoutSession(
+      id: s.id,
+      name: s.name,
+      startedAt: s.startedAt,
+      finishedAt: s.finishedAt,
+      note: s.note,
+    );
+    notifyListeners();
   }
 }
 

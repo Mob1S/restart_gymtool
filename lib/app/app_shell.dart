@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../state/backup_controller.dart';
+import '../state/data_revision.dart';
 
 import '../ui/theme.dart';
 
@@ -17,7 +18,10 @@ class AppShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = appColors(context);
     final location = GoRouterState.of(context).uri.path;
-    final revision = context.watch<BackupController?>()?.revision ?? 0;
+    final revision =
+        context.watch<DataRevision?>()?.value ??
+        context.watch<BackupController?>()?.revision ??
+        0;
     final index = switch (location) {
       '/history' => 1,
       '/progress' => 2,

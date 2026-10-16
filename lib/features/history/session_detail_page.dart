@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../state/record_management_controller.dart';
+import 'delete_session_dialog.dart';
+import '../../state/data_revision_loader.dart';
 
 // 执行器从**仓储层**拿，不从 data/db/ 直接拿 —— 见 executor_access.dart 的说明
 import '../../data/repositories/executor_access.dart';
@@ -27,15 +32,13 @@ class SessionDetailPage extends StatefulWidget {
   State<SessionDetailPage> createState() => _SessionDetailPageState();
 }
 
-class _SessionDetailPageState extends State<SessionDetailPage> {
+class _SessionDetailPageState extends State<SessionDetailPage>
+    with DataRevisionLoader<SessionDetailPage> {
   SessionSummary? _summary;
   bool _loading = true;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  Future<void> reloadData() => _load();
 
   Future<void> _load() async {
     final exec = context.read<SqlExecutor>();
@@ -52,7 +55,30 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
   Widget build(BuildContext context) {
     final c = appColors(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('训练详情'), backgroundColor: c.background),
+      appBar: AppBar(
+        title: const Text('训练详情'),
+        backgroundColor: c.background,
+        actions: [
+          if (context.watch<RecordManagementController?>() != null &&
+              _summary != null)
+            IconButton(
+              tooltip: '删除这场训练',
+              onPressed:
+                  context.watch<RecordManagementController?>()?.busy == true
+                  ? null
+                  : () async {
+                      if (await showDeleteSessionDialog(
+                            context,
+                            widget.sessionId,
+                          ) &&
+                          context.mounted) {
+                        context.go('/history');
+                      }
+                    },
+              icon: const Icon(Icons.delete_outline),
+            ),
+        ],
+      ),
       body: _body(),
     );
   }
@@ -69,7 +95,14 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
     }
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.screenH),
-      children: [SessionSummaryView(summary: summary)],
+      children: [
+        if (summary.session.note?.isNotEmpty == true)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Text(summary.session.note!),
+          ),
+        SessionSummaryView(summary: summary),
+      ],
     );
   }
 }
