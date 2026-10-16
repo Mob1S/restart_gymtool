@@ -1,11 +1,11 @@
 {
-    "name": "gym_tracker",
-    "short_name": "gym_tracker",
+    "name": "健身记录",
+    "short_name": "健身记录",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0B0C0E",
+    "theme_color": "#0B0C0E",
+    "description": "按组记录训练，保存计划与力量进步。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

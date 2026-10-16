@@ -1,0 +1,138 @@
+[
+  {
+    "file": "android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+    "size": [
+      48,
+      48
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png",
+    "size": [
+      108,
+      108
+    ],
+    "mode": "RGBA"
+  },
+  {
+    "file": "android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+    "size": [
+      72,
+      72
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png",
+    "size": [
+      162,
+      162
+    ],
+    "mode": "RGBA"
+  },
+  {
+    "file": "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+    "size": [
+      96,
+      96
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png",
+    "size": [
+      216,
+      216
+    ],
+    "mode": "RGBA"
+  },
+  {
+    "file": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+    "size": [
+      144,
+      144
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png",
+    "size": [
+      324,
+      324
+    ],
+    "mode": "RGBA"
+  },
+  {
+    "file": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+    "size": [
+      192,
+      192
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+    "size": [
+      432,
+      432
+    ],
+    "mode": "RGBA"
+  },
+  {
+    "file": "assets/branding/app-icon.png",
+    "size": [
+      1024,
+      1024
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "web/favicon.png",
+    "size": [
+      32,
+      32
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "web/icons/Icon-192.png",
+    "size": [
+      192,
+      192
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "web/icons/Icon-maskable-192.png",
+    "size": [
+      192,
+      192
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "web/icons/Icon-512.png",
+    "size": [
+      512,
+      512
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "web/icons/Icon-maskable-512.png",
+    "size": [
+      512,
+      512
+    ],
+    "mode": "RGB"
+  },
+  {
+    "file": "assets/branding/icon-preview.png",
+    "size": [
+      840,
+      400
+    ],
+    "mode": "RGB"
+  }
+]

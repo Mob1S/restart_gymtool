@@ -34,6 +34,8 @@ Flutter 本地健身记录工具：按组记录重量和次数、正计时休息
 
 最终本机检查：格式通过、静态检查无问题、**334 条测试通过**、25 项真实浏览器场景通过、9 项校验破坏被测试发现，Android debug / release 构建成功。功能源码提交为 `309d8b5`。
 
+图标已按用户反馈改为橙色哑铃配水平直杆，去除中央对勾；Android 与 Web 同步。最新安装包、裁切预览和复验结果见 [图标与复验记录](docs/superpowers/plans/2026-10-16-icon-and-retest.md)。
+
 ## 开发与检查（Windows PowerShell）
 
 本机 SDK 和缓存放在 `.tooling/`；每个 shell 先加载环境脚本。若 PowerShell 禁止执行脚本，可先启动仅当前进程放行的 shell：`powershell -NoProfile -ExecutionPolicy Bypass`。

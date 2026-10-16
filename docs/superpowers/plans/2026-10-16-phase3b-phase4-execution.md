@@ -84,6 +84,8 @@
 
 ## APK
 
+以下大小与哈希对应图标更新前的功能交付包。同一路径后续已重建，当前安装包以 [图标与复验记录](./2026-10-16-icon-and-retest.md) 的大小与哈希为准。
+
 - 默认发布包：`build/app/outputs/flutter-apk/app-release.apk`。
 - 字节数：69,377,889。
 - SHA-256：`F380C818E80EC4EB20FF9999F828A6ABD3D5E363E1471B66E92CF0928414C7E5`。
