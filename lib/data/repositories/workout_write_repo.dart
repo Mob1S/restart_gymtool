@@ -1,9 +1,11 @@
 import '../../domain/backup_codec.dart';
 import '../../domain/record_management.dart';
 import '../../domain/types.dart';
+import '../../domain/weight_value.dart';
 import '../db/sql_executor.dart';
 import 'backup_repo.dart';
 import 'exercise_repo.dart';
+import 'exercise_preferences_repo.dart';
 import 'session_repo.dart';
 import 'set_repo.dart';
 
@@ -50,13 +52,29 @@ Future<SessionExercise> addExerciseWithFirstSet(
   String exerciseId,
 ) async {
   final se = await addExerciseToSession(tx, sessionId, exerciseId);
-  final last = await getLastPerformance(tx, exerciseId, sessionId);
-  await addSet(
-    tx,
-    se.id,
-    last.isEmpty ? 20 : last.first.weight,
-    last.isEmpty ? 8 : last.first.reps,
+  final preference = (await readExercisePreferences(tx, [
+    exerciseId,
+  ]))[exerciseId]!;
+  final unit = preference.weightUnit;
+  // A source reading from another unit is not an equipment setting. Search
+  // completed sessions for the latest performance in this equipment's unit.
+  final row = await tx.first<Map<String, Object?>>(
+    'SELECT $setColumnsPrefixed FROM set_entry st '
+    'JOIN session_exercise se ON se.id=st.session_exercise_id '
+    'JOIN session s ON s.id=se.session_id '
+    'WHERE se.exercise_id=? AND s.id<>? AND s.finished_at IS NOT NULL '
+    'AND st.is_completed=1 AND COALESCE(st.source_unit,\'kg\')=? '
+    'ORDER BY s.started_at DESC,s.rowid DESC,st.position ASC,st.rowid ASC LIMIT 1',
+    [exerciseId, sessionId, unit.name],
   );
+  final last = row == null ? null : toSetEntry(SetRow.fromMap(row));
+  final reading =
+      last?.equipmentWeight ??
+      EquipmentWeight(
+        DecimalReading.parse(unit == WeightUnit.kg ? '20' : '45'),
+        unit,
+      );
+  await addSet(tx, se.id, reading.kilograms, last?.reps ?? 8, reading: reading);
   return se;
 }
 
@@ -67,6 +85,7 @@ Future<void> completeWorkoutSet(
   required double weight,
   required int reps,
   required int now,
+  EquipmentWeight? reading,
 }) async {
   if (!weight.isFinite || weight < 0 || reps < 0) {
     throw const RecordManagementException('重量或次数无效');
@@ -76,10 +95,10 @@ Future<void> completeWorkoutSet(
     for (final id in await _rests(tx, sessionId)) {
       await endRest(tx, id, now);
     }
-    await updateSetValues(tx, pendingSetId, weight, reps);
+    await updateSetValues(tx, pendingSetId, weight, reps, reading: reading);
     await completeSet(tx, pendingSetId, now);
     await startRest(tx, pendingSetId, now);
-    await addSet(tx, pending.sessionExerciseId, weight, reps);
+    await addSet(tx, pending.sessionExerciseId, weight, reps, reading: reading);
     encodeBackup(await readBackupSnapshot(tx, exportedAt: now));
   });
 }
@@ -113,15 +132,21 @@ Future<void> savePendingWeight(
   required String sessionId,
   required String pendingSetId,
   required double weight,
+  EquipmentWeight? reading,
 }) async {
   if (!weight.isFinite || weight < 0) {
     throw const RecordManagementException('重量无效');
   }
   await exec.transaction((tx) async {
     await requirePendingSet(tx, sessionId, pendingSetId);
+    final source = reading ?? EquipmentWeight.kg(weight);
+    if ((source.kilograms - weight).abs() >
+        (weight.abs() * 1e-12).clamp(1e-9, double.infinity)) {
+      throw const RecordManagementException('器械读数与标准重量不一致');
+    }
     await tx.run(
-      'UPDATE set_entry SET weight=? WHERE id=? AND is_completed=0',
-      [weight, pendingSetId],
+      'UPDATE set_entry SET weight=?,source_weight=?,source_unit=? WHERE id=? AND is_completed=0',
+      [source.kilograms, source.amount.text, source.unit.name, pendingSetId],
     );
   });
 }

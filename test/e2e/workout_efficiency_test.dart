@@ -45,6 +45,13 @@ void main() {
       );
       await settle(t);
       Future<void> tap(String text) async {
+        for (
+          var attempt = 0;
+          attempt < 30 && find.text(text).evaluate().isEmpty;
+          attempt++
+        ) {
+          await settle(t);
+        }
         await t.ensureVisible(find.text(text).first);
         await settle(t);
         await t.tap(find.text(text).first);
@@ -53,11 +60,12 @@ void main() {
 
       await tap('开始训练');
       await tap('✓ 完成这组');
-      await t.tap(
+      await t.drag(
         find.descendant(
           of: find.byType(NextSetWeight),
-          matching: find.byIcon(Icons.add),
+          matching: find.byKey(const ValueKey('weight-adjuster')),
         ),
+        const Offset(0, -16),
       );
       await settle(t);
       await tap('开始第 2 组');
@@ -94,6 +102,13 @@ void main() {
               .rows('sets')
               .where((s) => s['sessionExerciseId'] == source['id']),
           hasLength(2),
+        );
+        expect(
+          backup
+              .rows('sets')
+              .where((s) => s['sessionExerciseId'] == source['id'])
+              .map((s) => s['weight']),
+          [20, 22.5],
         );
         expect(
           backup

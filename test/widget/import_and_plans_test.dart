@@ -45,7 +45,10 @@ void main() {
         ),
       );
       await boot(t);
-      await tap(t, '从 CSV 追加记录');
+      await tap(t, '历史');
+      await t.tap(find.byTooltip('记录操作'));
+      await settle(t);
+      await tap(t, '导入 CSV');
       await tap(t, '选择 CSV 文件');
       expect(find.text('追加 1 场训练'), findsOneWidget);
       await t.runAsync(() async {
@@ -79,10 +82,13 @@ void main() {
     'plan draft supports duplicate actions; save, cancel delete and delete',
     (t) async {
       await boot(t);
-      await tap(t, '训练计划');
-      await tap(t, '新建');
+      await tap(t, '训练');
+      await tap(t, '管理计划');
+      await tap(t, '新建计划');
       await t.enterText(find.byType(TextField), 'A');
       await settle(t);
+      await tap(t, '添加训练日');
+      await t.enterText(find.widgetWithText(TextField, '训练日名称'), '力量日');
       await tap(t, '添加动作');
       await t.enterText(find.widgetWithText(TextField, '搜索动作'), '深蹲');
       await settle(t);
@@ -98,9 +104,10 @@ void main() {
       await t.runAsync(() async {
         expect(await listTemplates(db), isEmpty);
       });
+      await tap(t, '完成');
       await tap(t, '保存');
       expect(find.text('A'), findsOneWidget);
-      expect(find.text('2 个动作'), findsOneWidget);
+      expect(find.text('1 个训练日 · 2 个动作'), findsOneWidget);
       await t.runAsync(() async {
         final list = await listTemplates(db);
         expect(
@@ -127,7 +134,8 @@ void main() {
     'manual input uses preview and same repository for 460 kg volume',
     (t) async {
       await boot(t);
-      await tap(t, '手动补记录');
+      await tap(t, '历史');
+      await tap(t, '补加');
       await t.enterText(
         find.widgetWithText(TextField, '训练名称（可空）'),
         'Manual day',

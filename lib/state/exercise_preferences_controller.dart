@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 
 import '../data/db/sql_executor.dart';
 import '../data/repositories/exercise_preferences_repo.dart';
+import '../data/repositories/workout_settings_repo.dart';
 import '../domain/exercise_preferences.dart';
 import '../domain/record_management.dart';
 import '../domain/workout_edit.dart';
+import '../domain/weight_value.dart';
 import 'data_revision.dart';
 
 class ExercisePreferencesController extends ChangeNotifier {
@@ -50,6 +52,13 @@ class ExercisePreferencesController extends ChangeNotifier {
   Future<WorkoutWriteResult> save(
     String id, {
     int? weightStepMilli,
+    WeightUnit? weightUnit,
+    DecimalReading? kgStep,
+    DecimalReading? lbStep,
+    bool? showKgEquivalent,
+    String? sessionId,
+    String? pendingSetId,
+    EquipmentWeight? pendingReading,
     bool? isFavorite,
     String? equipmentNote,
     String? expectedToken,
@@ -59,14 +68,34 @@ class ExercisePreferencesController extends ChangeNotifier {
     message = null;
     notifyListeners();
     try {
-      final result = await saveExercisePreference(
-        _exec,
-        id,
-        expectedToken: expectedToken ?? preferenceFor(id).token,
-        weightStepMilli: weightStepMilli,
-        isFavorite: isFavorite,
-        equipmentNote: equipmentNote,
-      );
+      final current = preferenceFor(id);
+      final result =
+          sessionId != null && pendingSetId != null && pendingReading != null
+          ? await applyPendingWeightSettings(
+              _exec,
+              sessionId: sessionId,
+              pendingSetId: pendingSetId,
+              exerciseId: id,
+              expectedPreferenceToken: expectedToken ?? current.token,
+              reading: pendingReading,
+              kgStep: kgStep ?? current.kgStep,
+              lbStep: lbStep ?? current.lbStep,
+              showKgEquivalent: showKgEquivalent ?? current.showKgEquivalent,
+              equipmentNote: equipmentNote,
+              isFavorite: isFavorite,
+            )
+          : await saveExercisePreference(
+              _exec,
+              id,
+              expectedToken: expectedToken ?? preferenceFor(id).token,
+              weightStepMilli: weightStepMilli,
+              weightUnit: weightUnit,
+              kgStep: kgStep,
+              lbStep: lbStep,
+              showKgEquivalent: showKgEquivalent,
+              isFavorite: isFavorite,
+              equipmentNote: equipmentNote,
+            );
       if (_disposed) return WorkoutWriteResult.saved;
       revision?.changed();
       _values[id] = result;

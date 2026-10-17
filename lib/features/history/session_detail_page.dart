@@ -10,6 +10,7 @@ import '../../state/data_revision_loader.dart';
 import '../../data/repositories/executor_access.dart';
 import '../../data/repositories/session_summary_loader.dart';
 import '../../domain/session_summary.dart';
+import '../../domain/local_date.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
 import '../../ui/widgets/session_summary_view.dart';
@@ -25,8 +26,13 @@ import '../../ui/widgets/session_summary_view.dart';
 /// 另一回事（结束不可逆，只给一个出口），不要照抄到这里。
 class SessionDetailPage extends StatefulWidget {
   final String sessionId;
+  final LocalDate? historyDate;
 
-  const SessionDetailPage({super.key, required this.sessionId});
+  const SessionDetailPage({
+    super.key,
+    required this.sessionId,
+    this.historyDate,
+  });
 
   @override
   State<SessionDetailPage> createState() => _SessionDetailPageState();
@@ -72,7 +78,9 @@ class _SessionDetailPageState extends State<SessionDetailPage>
                             widget.sessionId,
                           ) &&
                           context.mounted) {
-                        context.go('/history');
+                        context.go(
+                          '/history${widget.historyDate == null ? '' : '?date=${widget.historyDate!.key}'}',
+                        );
                       }
                     },
               icon: const Icon(Icons.delete_outline),

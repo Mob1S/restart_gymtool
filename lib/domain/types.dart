@@ -1,3 +1,5 @@
+import 'weight_value.dart';
+
 /// 动作库里的一个动作。
 ///
 /// 预置动作与用户自建动作共用这一张表，只有 [isCustom] 区分 —— 备份导出时
@@ -38,13 +40,12 @@ class WorkoutSession {
   final int? finishedAt;
   final String? note;
 
-  /// 这一场是按哪套计划练的；null = 没按计划。
-  ///
-  /// 「今天该练哪一套」就是从这个字段推出来的：取最近一场已结束、且它非空的
-  /// 训练，在计划列表里往后数一套。**刻意不另存一个「下一个该练第几套」的字段**
-  /// —— 那就要在跳过、删计划、导入记录、恢复备份四条路径上同步维护它，
-  /// 一旦不符，表现是「轮转莫名跳了一套」。
+  /// 开训来源训练日。父计划按 [planId] 分组，轮换由实际完成日推算。
   final String? templateId;
+  final String? planId;
+  final String? planNameSnapshot;
+  final String? dayNameSnapshot;
+  final String origin;
 
   const WorkoutSession({
     required this.id,
@@ -53,6 +54,10 @@ class WorkoutSession {
     this.finishedAt,
     this.note,
     this.templateId,
+    this.planId,
+    this.planNameSnapshot,
+    this.dayNameSnapshot,
+    this.origin = 'legacy',
   });
 
   WorkoutSession copyWith({int? finishedAt}) => WorkoutSession(
@@ -62,6 +67,10 @@ class WorkoutSession {
     finishedAt: finishedAt ?? this.finishedAt,
     note: note,
     templateId: templateId,
+    planId: planId,
+    planNameSnapshot: planNameSnapshot,
+    dayNameSnapshot: dayNameSnapshot,
+    origin: origin,
   );
 }
 
@@ -105,6 +114,9 @@ class SetEntry {
 
   /// 重量（kg）
   final double weight;
+  final EquipmentWeight? recordedWeight;
+  EquipmentWeight get equipmentWeight =>
+      recordedWeight ?? EquipmentWeight.kg(weight);
   final int reps;
   final bool isCompleted;
 
@@ -120,6 +132,7 @@ class SetEntry {
     required this.sessionExerciseId,
     required this.position,
     required this.weight,
+    this.recordedWeight,
     required this.reps,
     required this.isCompleted,
     this.restSeconds,

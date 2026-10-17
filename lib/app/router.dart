@@ -12,6 +12,7 @@ import 'app_shell.dart';
 import '../features/import/import_page.dart';
 import '../features/plans/plan_list_page.dart';
 import '../features/plans/plan_editor_page.dart';
+import '../domain/local_date.dart';
 
 /// 路由表。
 ///
@@ -29,13 +30,26 @@ GoRouter buildRouter() => GoRouter(
     GoRoute(path: '/records/import', builder: (_, _) => const ImportPage()),
     GoRoute(
       path: '/records/manual',
-      builder: (_, _) => const ImportPage(manual: true),
+      builder: (_, state) => ImportPage(
+        manual: true,
+        initialDate: LocalDate.tryParse(state.uri.queryParameters['date']),
+      ),
     ),
     ShellRoute(
       builder: (context, state, child) => AppShell(child: child),
       routes: [
         GoRoute(path: '/', builder: (_, _) => const WorkoutHomePage()),
-        GoRoute(path: '/history', builder: (_, _) => const HistoryPage()),
+        GoRoute(
+          path: '/history',
+          builder: (_, state) {
+            final raw = state.uri.queryParameters['date'];
+            final date = LocalDate.tryParse(raw);
+            return HistoryPage(
+              date: date,
+              invalidDate: raw != null && date == null,
+            );
+          },
+        ),
         GoRoute(path: '/progress', builder: (_, _) => const ProgressPage()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsPage()),
       ],
@@ -58,7 +72,10 @@ GoRouter buildRouter() => GoRouter(
     // 改这张表之前先让它跑一遍。
     GoRoute(
       path: '/history/:id',
-      builder: (_, s) => SessionDetailPage(sessionId: s.pathParameters['id']!),
+      builder: (_, s) => SessionDetailPage(
+        sessionId: s.pathParameters['id']!,
+        historyDate: LocalDate.tryParse(s.uri.queryParameters['date']),
+      ),
     ),
     GoRoute(
       path: '/progress/:exerciseId',

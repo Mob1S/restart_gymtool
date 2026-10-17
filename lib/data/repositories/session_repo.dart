@@ -1,5 +1,6 @@
 import '../../domain/metrics.dart';
 import '../../domain/types.dart';
+import '../../domain/local_date.dart';
 import '../db/sql_executor.dart';
 import '../ids.dart';
 
@@ -14,6 +15,10 @@ class SessionRow {
   final int? finishedAt;
   final String? note;
   final String? templateId;
+  final String? planId;
+  final String? planNameSnapshot;
+  final String? dayNameSnapshot;
+  final String origin;
 
   const SessionRow({
     required this.id,
@@ -22,6 +27,10 @@ class SessionRow {
     this.finishedAt,
     this.note,
     this.templateId,
+    this.planId,
+    this.planNameSnapshot,
+    this.dayNameSnapshot,
+    this.origin = 'legacy',
   });
 
   factory SessionRow.fromMap(Map<String, Object?> m) => SessionRow(
@@ -31,6 +40,10 @@ class SessionRow {
     finishedAt: m['finished_at'] as int?,
     note: m['note'] as String?,
     templateId: m['template_id'] as String?,
+    planId: m['plan_id'] as String?,
+    planNameSnapshot: m['plan_name_snapshot'] as String?,
+    dayNameSnapshot: m['day_name_snapshot'] as String?,
+    origin: m['origin'] as String? ?? 'legacy',
   );
 }
 
@@ -67,6 +80,10 @@ WorkoutSession toSession(SessionRow row) => WorkoutSession(
   finishedAt: row.finishedAt,
   note: row.note,
   templateId: row.templateId,
+  planId: row.planId,
+  planNameSnapshot: row.planNameSnapshot,
+  dayNameSnapshot: row.dayNameSnapshot,
+  origin: row.origin,
 );
 
 SessionExercise toSessionExercise(SessionExerciseRow row) => SessionExercise(
@@ -78,7 +95,7 @@ SessionExercise toSessionExercise(SessionExerciseRow row) => SessionExercise(
 );
 
 const String sessionColumns =
-    'id, name, started_at, finished_at, note, template_id';
+    'id, name, started_at, finished_at, note, template_id, plan_id, plan_name_snapshot, day_name_snapshot, origin';
 const String sessionExerciseColumns =
     'id, session_id, exercise_id, position, note';
 
@@ -92,6 +109,10 @@ Future<WorkoutSession> createSession(
   SqlExecutor exec, {
   String? name,
   String? templateId,
+  String? planId,
+  String? planNameSnapshot,
+  String? dayNameSnapshot,
+  String origin = 'live',
 }) async {
   final session = WorkoutSession(
     id: newId(),
@@ -100,10 +121,23 @@ Future<WorkoutSession> createSession(
     finishedAt: null,
     note: null,
     templateId: templateId,
+    planId: planId,
+    planNameSnapshot: planNameSnapshot,
+    dayNameSnapshot: dayNameSnapshot,
+    origin: origin,
   );
   await exec.run(
-    'INSERT INTO session (id, name, started_at, finished_at, note, template_id) VALUES (?, ?, ?, NULL, NULL, ?)',
-    [session.id, session.name, session.startedAt, session.templateId],
+    'INSERT INTO session (id, name, started_at, finished_at, note, template_id, plan_id, plan_name_snapshot, day_name_snapshot, origin) VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)',
+    [
+      session.id,
+      session.name,
+      session.startedAt,
+      session.templateId,
+      planId,
+      planNameSnapshot,
+      dayNameSnapshot,
+      origin,
+    ],
   );
   return session;
 }
@@ -308,9 +342,13 @@ class SessionSummaryRow {
 /// SELECT 里带上 `s.note` / `s.template_id`（计划里只列了四列）：行里内嵌的
 /// 是完整的 [WorkoutSession]，缺列时 `SessionRow.fromMap` 会把它们**静默填
 /// null** —— 将来谁从这一行读 `templateId` 去推计划轮转，就会静默算错。
-Future<List<SessionSummaryRow>> listSessionSummaries(SqlExecutor exec) async {
+Future<List<SessionSummaryRow>> listSessionSummaries(
+  SqlExecutor exec, {
+  LocalDate? date,
+}) async {
   final rows = await exec.all<Map<String, Object?>>(
     '''SELECT s.id, s.name, s.started_at, s.finished_at, s.note, s.template_id,
+              s.plan_id, s.plan_name_snapshot, s.day_name_snapshot, s.origin,
               COUNT(st.id)                          AS set_count,
               COALESCE(SUM(st.weight * st.reps), 0) AS volume_load
          FROM session s
@@ -318,8 +356,34 @@ Future<List<SessionSummaryRow>> listSessionSummaries(SqlExecutor exec) async {
          LEFT JOIN set_entry st ON st.session_exercise_id = se.id
                                AND st.is_completed = 1
         WHERE s.finished_at IS NOT NULL
+        ${date == null ? '' : 'AND s.started_at>=? AND s.started_at<?'}
         GROUP BY s.id
         ORDER BY s.started_at DESC, s.rowid DESC''',
+    date == null
+        ? null
+        : [
+            date.start.millisecondsSinceEpoch,
+            date.nextStart.millisecondsSinceEpoch,
+          ],
   );
   return rows.map(SessionSummaryRow.fromMap).toList();
+}
+
+Future<Set<String>> listCompletedTrainingDates(
+  SqlExecutor exec,
+  LocalDate month,
+) async {
+  final first = DateTime(month.year, month.month);
+  final next = DateTime(month.year, month.month + 1);
+  final rows = await exec.all<Map<String, Object?>>(
+    'SELECT started_at FROM session WHERE finished_at IS NOT NULL '
+    'AND started_at>=? AND started_at<?',
+    [first.millisecondsSinceEpoch, next.millisecondsSinceEpoch],
+  );
+  return {
+    for (final row in rows)
+      LocalDate.fromDateTime(
+        DateTime.fromMillisecondsSinceEpoch(row['started_at'] as int),
+      ).key,
+  };
 }

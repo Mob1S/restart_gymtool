@@ -1,9 +1,19 @@
 import 'dart:convert';
 
+import 'weight_value.dart';
+
 class ImportedSet {
   final double weight;
   final int reps;
-  const ImportedSet({required this.weight, required this.reps});
+  final EquipmentWeight? recordedWeight;
+  const ImportedSet({
+    required this.weight,
+    required this.reps,
+    this.recordedWeight,
+  });
+
+  EquipmentWeight get equipmentWeight =>
+      recordedWeight ?? EquipmentWeight.kg(weight);
 }
 
 class ImportedExercise {
@@ -83,6 +93,13 @@ void validateImportedWorkouts(List<ImportedWorkout> workouts) {
       for (final s in e.sets) {
         if (!s.weight.isFinite || s.weight < 0 || s.reps <= 0) {
           fail('重量须为非负有限数，次数须为正整数');
+        }
+        final kilograms = s.equipmentWeight.kilograms;
+        final tolerance = s.weight.abs() * 1e-12 > 1e-9
+            ? s.weight.abs() * 1e-12
+            : 1e-9;
+        if (!kilograms.isFinite || (kilograms - s.weight).abs() > tolerance) {
+          fail('器械读数与公斤重量不一致');
         }
       }
     }

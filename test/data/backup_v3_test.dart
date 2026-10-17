@@ -10,8 +10,45 @@ import 'package:gym_tracker/domain/backup.dart';
 import '../support/workout_fixture.dart';
 import 'backup_repo_test.dart' show loadFixture;
 
+// Exercise the published v3 validator independently of today's export version.
+Map<String, dynamic> legacyV3(BackupFile backup) {
+  final raw = jsonDecode(jsonEncode(backup.toJson())) as Map<String, dynamic>;
+  raw['version'] = 3;
+  raw['schemaVersion'] = 5;
+  final data = raw['data'] as Map<String, dynamic>;
+  data.remove('plans');
+  for (final row in data['templates'] as List) {
+    (row as Map).remove('planId');
+  }
+  for (final row in data['sessions'] as List) {
+    for (final key in [
+      'planId',
+      'planNameSnapshot',
+      'dayNameSnapshot',
+      'origin',
+    ]) {
+      (row as Map).remove(key);
+    }
+  }
+  for (final row in data['sets'] as List) {
+    (row as Map).remove('sourceWeight');
+    row.remove('sourceUnit');
+  }
+  data['exercisePreferences'] = [
+    for (final row in data['exercisePreferences'] as List)
+      {
+        'exerciseId': row['exerciseId'],
+        'weightStepMilli': (double.parse(row['kgStep'] as String) * 1000)
+            .round(),
+        'isFavorite': row['isFavorite'],
+        'equipmentNote': row['equipmentNote'],
+      },
+  ];
+  return raw;
+}
+
 void main() {
-  test('v3 exact round trip contains Unicode preferences and prepared active weight', () async {
+  test('current exact round trip contains Unicode preferences and prepared active weight', () async {
     final f = await workoutFixture();
     final p = (await readExercisePreferences(f.db, [f.benchId]))[f.benchId]!;
     await saveExercisePreference(
@@ -27,8 +64,8 @@ void main() {
     f.controller.stagePendingWeight(pending.id, 42.5);
     await f.controller.flushPendingWeight();
     final backup = await exportBackup(f.db, exportedAt: 0);
-    expect(backup.version, 3);
-    expect(backup.schemaVersion, 5);
+    expect(backup.version, 4);
+    expect(backup.schemaVersion, 6);
     final other = await FfiExecutor.openMigrated();
     addTearDown(other.close);
     await restoreBackup(other, await inspectBackup(other, backup));
@@ -102,7 +139,7 @@ void main() {
         isFavorite: true,
       );
       final before = (await exportBackup(f.db, exportedAt: 0)).toJson();
-      final raw = jsonDecode(jsonEncode(before)) as Map<String, dynamic>;
+      final raw = legacyV3(validateBackup(before));
       mutate(raw);
       expect(
         () => validateBackup(raw),

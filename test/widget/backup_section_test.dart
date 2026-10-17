@@ -10,6 +10,7 @@ import 'package:gym_tracker/data/repositories/settings_repo.dart';
 import 'package:gym_tracker/domain/backup_codec.dart';
 import 'package:gym_tracker/domain/backup.dart';
 import 'package:gym_tracker/features/settings/backup_section.dart';
+import 'package:gym_tracker/features/workout/workout_home_page.dart';
 import 'package:gym_tracker/state/active_session_controller.dart';
 import 'package:gym_tracker/state/backup_controller.dart';
 import 'package:gym_tracker/ui/theme.dart';
@@ -77,7 +78,7 @@ void main() {
   testWidgets('real export button saves parseable snapshot', (tester) async {
     await pumpSection(tester);
     await tap(tester, '导出备份');
-    expect(decodeBackup(files.savedBytes!).schemaVersion, 5);
+    expect(decodeBackup(files.savedBytes!).schemaVersion, 6);
     expect(find.text('备份已保存'), findsOneWidget);
   });
 
@@ -215,6 +216,29 @@ void main() {
       final session = tester
           .element(find.byType(Scaffold).first)
           .read<ActiveSessionController>();
+      final bootstrapBackup = tester
+          .element(find.byType(Scaffold).first)
+          .read<BackupController>();
+      Future<void> waitForRestoredHome() async {
+        // Real SQLite, the theme query and router navigation finish on real
+        // I/O. Wait for that operation rather than assuming 120ms is enough
+        // when the entire test suite is competing for the same CPU.
+        for (var i = 0; i < 100; i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump(const Duration(milliseconds: 100));
+          if (!bootstrapBackup.busy &&
+              !session.loading &&
+              find.byType(WorkoutHomePage).evaluate().isNotEmpty) {
+            return;
+          }
+        }
+        fail(
+          'Backup restoration did not finish and return to the training home',
+        );
+      }
+
       await tester.runAsync(session.resume);
       await settle(tester);
       expect(session.session?.id, 'active-s');
@@ -227,6 +251,7 @@ void main() {
       await tap(tester, '设置');
       await tap(tester, '从备份恢复');
       await tap(tester, '替换并恢复');
+      await waitForRestoredHome();
       expect(session.session, isNull);
       expect(session.exercises, isEmpty);
       expect(session.currentIndex, 0);
@@ -247,6 +272,7 @@ void main() {
       await tap(tester, '设置');
       await tap(tester, '从备份恢复');
       await tap(tester, '替换并恢复');
+      await waitForRestoredHome();
       expect(session.session?.id, 'active-s');
       expect(session.exercises.single.sets.single.weight, 20);
       expect(find.textContaining('继续'), findsWidgets);

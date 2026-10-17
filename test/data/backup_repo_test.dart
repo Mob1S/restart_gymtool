@@ -8,6 +8,7 @@ import 'package:gym_tracker/data/repositories/backup_repo.dart';
 import 'package:gym_tracker/data/repositories/exercise_repo.dart';
 import 'package:gym_tracker/data/repositories/settings_repo.dart';
 import 'package:gym_tracker/domain/backup.dart';
+import 'package:gym_tracker/domain/backup_upgrade.dart';
 
 BackupFile loadFixture([String name = 'legacy-v2']) => validateBackup(
   jsonDecode(File('test/fixtures/backup/$name.json').readAsStringSync()),
@@ -47,8 +48,9 @@ void main() {
     final incoming = loadFixture();
     await restore(incoming);
     final exported = await exportBackup(exec, exportedAt: 123);
-    for (final key in incoming.data.keys) {
-      expect(exported.rows(key), incoming.rows(key), reason: key);
+    final upgraded = validateBackup(upgradeBackupToV4(incoming.toJson()));
+    for (final key in upgraded.data.keys) {
+      expect(exported.rows(key), upgraded.rows(key), reason: key);
     }
     expect(exported.rows('sessions').map((r) => r['id']), [
       'finished-s',
@@ -59,7 +61,7 @@ void main() {
       (await exec.first<Map<String, Object?>>(
         "SELECT value FROM app_meta WHERE key='schema_version'",
       ))!['value'],
-      '5',
+      '6',
     );
   });
   test(

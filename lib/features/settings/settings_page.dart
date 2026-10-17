@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../data/repositories/settings_repo.dart';
 import '../../state/theme_controller.dart';
@@ -75,37 +74,6 @@ class SettingsPage extends StatelessWidget {
           BackupSection(controller: backup),
           const SizedBox(height: AppSpacing.xl),
         ],
-        const SizedBox(height: 16),
-        AppCard(
-          child: Column(
-            children: [
-              Material(
-                type: MaterialType.transparency,
-                child: ListTile(
-                  title: const Text('训练计划'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push('/plans'),
-                ),
-              ),
-              Material(
-                type: MaterialType.transparency,
-                child: ListTile(
-                  title: const Text('从 CSV 追加记录'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push('/records/import'),
-                ),
-              ),
-              Material(
-                type: MaterialType.transparency,
-                child: ListTile(
-                  title: const Text('手动补记录'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push('/records/manual'),
-                ),
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 24),
       ],
     );

@@ -3,6 +3,7 @@ import 'package:gym_tracker/data/db/ffi_executor.dart';
 import 'package:gym_tracker/data/repositories/backup_repo.dart';
 import 'package:gym_tracker/data/repositories/import_repo.dart';
 import 'package:gym_tracker/data/repositories/template_repo.dart';
+import 'package:gym_tracker/data/repositories/training_plan_repo.dart';
 import 'package:gym_tracker/data/repositories/workout_plan_repo.dart';
 import 'package:gym_tracker/data/repositories/record_management_repo.dart';
 import 'package:gym_tracker/data/repositories/progress_repo.dart';
@@ -22,7 +23,8 @@ void main() {
     final plans = PlanController(
       db,
       onChanged: () {},
-      onDeleted: active.detachTemplate,
+      onDayDeleted: active.detachTemplate,
+      onPlanDeleted: active.detachPlan,
     );
     try {
       await restoreBackup(
@@ -64,8 +66,12 @@ void main() {
       );
       expect(active.exercises, hasLength(1));
       expect(active.session!.name, 'B');
-      final removal = (await plans.previewDelete(b.template.id))!;
-      expect(await plans.confirmDelete(removal), true);
+      final parent = (await listTrainingPlans(db)).single;
+      await plans.loadDraft(parent.id);
+      plans.removeDay(
+        plans.draft!.days.indexWhere((day) => day.id == b.template.id),
+      );
+      expect(await plans.saveDraft(), true);
       expect(active.session!.templateId, isNull);
       expect(active.exercises.single.sets.single.weight, 50);
       expect(
@@ -83,6 +89,10 @@ void main() {
       await active.completeCurrentSet(50, 8);
       await active.endWorkout();
       await deleteTemplate(db, (await inspectTemplateDeletion(db, 'plan-p'))!);
+      expect(
+        await plans.confirmDelete((await getTrainingPlan(db, parent.id))!),
+        true,
+      );
       expect((await loadNextWorkout(db)).exerciseIds, ['custom-e']);
       final backup = await exportBackup(db, exportedAt: 0);
       await restoreBackup(target, await inspectBackup(target, backup));

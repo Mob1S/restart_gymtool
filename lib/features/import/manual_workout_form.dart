@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../domain/import_records.dart';
 import '../../domain/workout_csv.dart';
+import '../../domain/weight_value.dart';
+import '../../domain/local_date.dart';
 import '../../state/import_controller.dart';
 import '../workout/exercise_picker.dart';
 
 class _SetDraft {
   final weight = TextEditingController(text: '20');
   final reps = TextEditingController(text: '8');
+  WeightUnit unit = WeightUnit.kg;
   void dispose() {
     weight.dispose();
     reps.dispose();
@@ -28,7 +31,12 @@ class _ExerciseDraft {
 
 class ManualWorkoutForm extends StatefulWidget {
   final ImportController controller;
-  const ManualWorkoutForm({super.key, required this.controller});
+  final LocalDate? initialDate;
+  const ManualWorkoutForm({
+    super.key,
+    required this.controller,
+    this.initialDate,
+  });
   @override
   State<ManualWorkoutForm> createState() => _ManualWorkoutFormState();
 }
@@ -41,6 +49,14 @@ class _ManualWorkoutFormState extends State<ManualWorkoutForm> {
   final List<_ExerciseDraft> _exercises = [];
   bool _dirty = false;
   String? _error;
+  @override
+  void initState() {
+    super.initState();
+    final date = widget.initialDate ?? LocalDate.fromDateTime(DateTime.now());
+    _start.text = '${date.key} ';
+    _end.text = '${date.key} ';
+  }
+
   @override
   void dispose() {
     _name.dispose();
@@ -76,7 +92,17 @@ class _ManualWorkoutFormState extends State<ManualWorkoutForm> {
           if (w == null || r == null) {
             throw const ImportValidationException('请输入有效重量和整数次数');
           }
-          sets.add(ImportedSet(weight: w, reps: r));
+          final reading = EquipmentWeight(
+            DecimalReading.parse(s.weight.text.trim()),
+            s.unit,
+          );
+          sets.add(
+            ImportedSet(
+              weight: reading.kilograms,
+              reps: r,
+              recordedWeight: reading,
+            ),
+          );
         }
       }
       final workout = ImportedWorkout(
@@ -93,6 +119,8 @@ class _ManualWorkoutFormState extends State<ManualWorkoutForm> {
       await widget.controller.previewManual([workout], matches: matches);
     } on ImportValidationException catch (e) {
       setState(() => _error = e.message);
+    } on FormatException catch (e) {
+      setState(() => _error = e.message.toString());
     }
   }
 
@@ -176,11 +204,31 @@ class _ManualWorkoutFormState extends State<ManualWorkoutForm> {
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
-                            decoration: const InputDecoration(
-                              labelText: '重量 kg',
+                            decoration: InputDecoration(
+                              labelText:
+                                  '重量 ${_exercises[i].sets[j].unit.name}',
                             ),
                             onChanged: (_) => setState(() => _dirty = true),
                           ),
+                        ),
+                        const SizedBox(width: 12),
+                        DropdownButton<WeightUnit>(
+                          value: _exercises[i].sets[j].unit,
+                          items: [
+                            for (final unit in WeightUnit.values)
+                              DropdownMenuItem(
+                                value: unit,
+                                child: Text(unit.name),
+                              ),
+                          ],
+                          onChanged: (unit) {
+                            if (unit != null) {
+                              setState(() {
+                                _exercises[i].sets[j].unit = unit;
+                                _dirty = true;
+                              });
+                            }
+                          },
                         ),
                         const SizedBox(width: 12),
                         Expanded(

@@ -3,12 +3,14 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/import_controller.dart';
+import '../../domain/local_date.dart';
 import 'import_preview_view.dart';
 import 'manual_workout_form.dart';
 
 class ImportPage extends StatefulWidget {
   final bool manual;
-  const ImportPage({super.key, this.manual = false});
+  final LocalDate? initialDate;
+  const ImportPage({super.key, this.manual = false, this.initialDate});
   @override
   State<ImportPage> createState() => _ImportPageState();
 }
@@ -42,14 +44,17 @@ class _ImportPageState extends State<ImportPage> {
               child: c.draft != null
                   ? ImportPreviewView(controller: c)
                   : widget.manual
-                  ? ManualWorkoutForm(controller: c)
+                  ? ManualWorkoutForm(
+                      controller: c,
+                      initialDate: widget.initialDate,
+                    )
                   : Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Text('支持 Strong、Hevy、训记 CSV。先预览，再追加到历史。'),
+                            const Text('支持本应用、Strong、Hevy、训记 CSV。先预览，再追加到历史。'),
                             const SizedBox(height: 16),
                             FilledButton(
                               onPressed: c.busy ? null : () => c.selectCsv(),
@@ -86,7 +91,17 @@ class _ImportPageState extends State<ImportPage> {
                                         content: Text(c.message ?? '记录已导入'),
                                       ),
                                     );
-                                    context.go('/history');
+                                    final stamp = c.lastImportedStartedAt;
+                                    final date = widget.manual && stamp != null
+                                        ? LocalDate.fromDateTime(
+                                            DateTime.fromMillisecondsSinceEpoch(
+                                              stamp,
+                                            ),
+                                          )
+                                        : null;
+                                    context.go(
+                                      '/history${date == null ? '' : '?date=${date.key}'}',
+                                    );
                                   }
                                 },
                           child: Text(

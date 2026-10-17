@@ -31,7 +31,12 @@ class AppShell extends StatelessWidget {
 
     return Scaffold(
       body: SafeArea(
-        child: KeyedSubtree(key: ValueKey((location, revision)), child: child),
+        // Home observes DataRevision itself. Replacing its state here would
+        // interrupt end-and-start and discard the user's temporary day choice.
+        child: KeyedSubtree(
+          key: ValueKey((location, location == '/' ? null : revision)),
+          child: child,
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,

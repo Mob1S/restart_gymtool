@@ -1,5 +1,6 @@
 import 'schema.dart';
 import 'sql_executor.dart';
+import 'training_v6_migration.dart';
 
 /// 一个版本化迁移项。
 ///
@@ -8,6 +9,8 @@ import 'sql_executor.dart';
 /// 所以单条语句**应当**是幂等的（都写成 `CREATE ... IF NOT EXISTS`）。
 /// 唯一做不到幂等的是 `ALTER TABLE ... ADD COLUMN`（SQLite 没有
 /// `ADD COLUMN IF NOT EXISTS`）—— 见 [migrations] 里 v3 那一条的说明。
+/// v6 通过 [migrateTrainingV6] 的专用事务执行，DDL 与版本号原子提交；
+/// 已发布 v1–v5 的执行路径保持不变。
 class Migration {
   final int version;
   final List<String> statements;
@@ -51,10 +54,11 @@ const List<Migration> migrations = [
   ),
   Migration(version: 4, statements: [createBackupPlansSql]),
   Migration(version: 5, statements: [createExercisePreferencesSql]),
+  Migration(version: 6, statements: []),
 ];
 
 /// 当前库结构版本。必须与 [migrations] 的最后一项保持一致。
-const int schemaVersion = 5;
+const int schemaVersion = 6;
 
 /// 读出当前库结构版本。
 ///
@@ -83,6 +87,17 @@ Future<void> migrate(SqlExecutor exec) async {
     ..sort((a, b) => a.version - b.version);
 
   for (final migration in pending) {
+    if (migration.version == 6) {
+      await exec.transaction((tx) async {
+        await migrateTrainingV6(tx);
+        await tx.run(
+          "INSERT INTO app_meta (key,value) VALUES ('schema_version',?) "
+          'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+          ['6'],
+        );
+      });
+      continue;
+    }
     for (final statement in migration.statements) {
       await exec.run(statement);
     }

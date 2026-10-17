@@ -98,7 +98,8 @@ class _AppBootstrapState extends State<AppBootstrap> {
         _plans = PlanController(
           exec,
           onChanged: _revision.changed,
-          onDeleted: session.detachTemplate,
+          onDayDeleted: session.detachTemplate,
+          onPlanDeleted: session.detachPlan,
         );
         _records = RecordManagementController(
           exec,

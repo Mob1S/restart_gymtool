@@ -111,6 +111,15 @@ class SessionSummaryView extends StatelessWidget {
                 fontFeatures: tabularNums,
               ),
             ),
+            const SizedBox(height: AppSpacing.sm),
+            for (final (index, set) in s.sets.indexed)
+              Text(
+                '第 ${index + 1} 组 · ${set.equipmentWeight.label} × ${set.reps}',
+                style: TextStyle(
+                  fontSize: AppFontSize.caption,
+                  color: c.textSecondary,
+                ),
+              ),
             if (feedback != null) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(

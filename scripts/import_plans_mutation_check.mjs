@@ -9,10 +9,10 @@ const output=path.join(root,'build','acceptance',`import-plan-mutations-${new Da
 await mkdir(output,{recursive:true});
 const cases=[
   ['same-day','lib/domain/workout_csv.dart','[source.name, start, workoutName]','[source.name, 0, workoutName]','test/domain/import_pipeline_test.dart'],
-  ['pounds','lib/domain/workout_csv.dart','pounds ? 0.45359237 : 1','pounds ? 0.5 : 1','test/domain/import_pipeline_test.dart'],
+  ['pounds','lib/domain/weight_value.dart','amount.asDouble * 0.45359237','amount.asDouble * 0.5','test/domain/import_pipeline_test.dart'],
   ['stale-import','lib/data/repositories/import_repo.dart','if (jsonEncode(snapshot.data) != batch.token)','if (false)','test/data/import_repo_test.dart'],
   ['backup-capacity','lib/data/repositories/import_repo.dart','encodeBackup(await readBackupSnapshot(tx, exportedAt: now));','// omit export boundary','test/data/import_repo_test.dart'],
-  ['rotation-active','lib/data/repositories/session_repo.dart','WHERE finished_at IS NOT NULL AND template_id IS NOT NULL','WHERE template_id IS NOT NULL','test/data/plans_and_records_test.dart'],
+  ['rotation-active','lib/data/repositories/workout_plan_repo.dart',"AND finished_at IS NOT NULL AND origin IN ('live','legacy')","AND origin IN ('live','legacy')",'test/data/training_plan_repo_test.dart'],
   ['plan-detach','lib/data/repositories/template_repo.dart',"'UPDATE session SET template_id=NULL WHERE template_id=?'","'UPDATE session SET name=name WHERE template_id=?'",'test/data/plans_and_records_test.dart'],
   ['keep-completed','lib/data/repositories/record_management_repo.dart','WHERE session_exercise_id=? AND is_completed=0','WHERE session_exercise_id=? AND is_completed=1','test/state/remove_exercise_test.dart'],
   ['last-visible','lib/state/active_session_controller.dart','if (current.visibleCount <= 1)','if (false)','test/state/remove_exercise_test.dart'],

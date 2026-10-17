@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../domain/workout_edit.dart';
+import '../../domain/weight_value.dart';
 import '../../state/active_session_controller.dart';
 import 'number_stepper.dart';
 
@@ -45,7 +46,7 @@ class _EditSetSheet extends StatefulWidget {
 
 class _EditSetSheetState extends State<_EditSetSheet> {
   late final _weight = TextEditingController(
-    text: widget.edit.original.weight.toString(),
+    text: widget.edit.original.equipmentWeight.amount.text,
   );
   late final _reps = TextEditingController(
     text: '${widget.edit.original.reps}',
@@ -71,10 +72,24 @@ class _EditSetSheetState extends State<_EditSetSheet> {
       return;
     }
     setState(() => _saving = true);
+    EquipmentWeight reading;
+    try {
+      reading = EquipmentWeight(
+        DecimalReading.parse(_weight.text),
+        widget.edit.original.equipmentWeight.unit,
+      );
+    } on FormatException {
+      setState(() {
+        _saving = false;
+        _error = '请输入有效重量';
+      });
+      return;
+    }
     final result = await widget.controller.editCompletedSet(
       widget.edit,
-      weight,
+      reading.kilograms,
       reps,
+      reading: reading,
     );
     if (!mounted) return;
     if (result == WorkoutWriteResult.saved ||
@@ -111,7 +126,7 @@ class _EditSetSheetState extends State<_EditSetSheet> {
               Text(widget.name),
               const SizedBox(height: 16),
               Semantics(
-                label: '重量 kg',
+                label: '重量 ${widget.edit.original.equipmentWeight.unit.name}',
                 child: TextField(
                   key: const ValueKey('edit-set-weight'),
                   controller: _weight,
@@ -120,15 +135,21 @@ class _EditSetSheetState extends State<_EditSetSheet> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(labelText: '重量 kg'),
+                  decoration: InputDecoration(
+                    labelText:
+                        '重量 ${widget.edit.original.equipmentWeight.unit.name}',
+                  ),
                 ),
               ),
               NumberStepper(
                 value:
                     double.tryParse(_weight.text) ??
-                    widget.edit.original.weight,
+                    widget.edit.original.equipmentWeight.amount.asDouble,
                 step: widget.step,
-                max: math.max(500, widget.edit.original.weight),
+                max: math.max(
+                  500,
+                  widget.edit.original.equipmentWeight.amount.asDouble,
+                ),
                 onChanged: (v) {
                   if (!_saving) {
                     setState(() => _weight.text = v.toString());

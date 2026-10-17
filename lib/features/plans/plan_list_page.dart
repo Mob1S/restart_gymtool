@@ -26,14 +26,14 @@ class _PlanListPageState extends State<PlanListPage> {
 
   Future<void> _delete(String id) async {
     final c = context.read<PlanController>();
-    final preview = await c.previewDelete(id);
+    final preview = c.plans.where((plan) => plan.id == id).firstOrNull;
     if (preview == null || !mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('删除计划「${preview.name}」？'),
         content: Text(
-          '将移除 ${preview.exerciseCount} 个计划动作。${preview.completedReferences} 场历史训练和 ${preview.activeReferences} 场活动训练仍会保留，只解除计划关联。此操作无法撤销。',
+          '将移除 ${preview.days.length} 个训练日及其动作清单。历史训练和进行中的训练仍会保留，只解除计划关联。此操作无法撤销。',
         ),
         actions: [
           TextButton(
@@ -59,14 +59,14 @@ class _PlanListPageState extends State<PlanListPage> {
         actions: [
           TextButton(
             onPressed: c.busy ? null : () => _edit('/plans/new'),
-            child: const Text('新建'),
+            child: const Text('新建计划'),
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('计划只保存动作清单和顺序。重量、次数沿用上次成绩；完成一场后自动轮转到下一套。'),
+          const Text('一套计划包含多个训练日。完成整次训练后，按该计划的训练日顺序轮换，也可手动选择。'),
           if (c.busy) const LinearProgressIndicator(),
           if (c.message != null) Text(c.message!),
           if (c.plans.isEmpty && !c.busy)
@@ -79,11 +79,13 @@ class _PlanListPageState extends State<PlanListPage> {
               child: Column(
                 children: [
                   ListTile(
-                    title: Text(c.plans[i].template.name),
-                    subtitle: Text('${c.plans[i].exerciseCount} 个动作'),
+                    title: Text(c.plans[i].name),
+                    subtitle: Text(
+                      '${c.plans[i].days.length} 个训练日 · ${c.plans[i].days.fold<int>(0, (n, day) => n + day.exerciseIds.length)} 个动作',
+                    ),
                     onTap: c.busy
                         ? null
-                        : () => _edit('/plans/${c.plans[i].template.id}/edit'),
+                        : () => _edit('/plans/${c.plans[i].id}/edit'),
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
@@ -92,21 +94,19 @@ class _PlanListPageState extends State<PlanListPage> {
                         tooltip: '上移计划',
                         onPressed: c.busy || i == 0
                             ? null
-                            : () => c.movePlan(c.plans[i].template.id, -1),
+                            : () => c.movePlan(c.plans[i].id, -1),
                         icon: const Icon(Icons.arrow_upward),
                       ),
                       IconButton(
                         tooltip: '下移计划',
                         onPressed: c.busy || i == c.plans.length - 1
                             ? null
-                            : () => c.movePlan(c.plans[i].template.id, 1),
+                            : () => c.movePlan(c.plans[i].id, 1),
                         icon: const Icon(Icons.arrow_downward),
                       ),
                       IconButton(
                         tooltip: '删除计划',
-                        onPressed: c.busy
-                            ? null
-                            : () => _delete(c.plans[i].template.id),
+                        onPressed: c.busy ? null : () => _delete(c.plans[i].id),
                         icon: const Icon(Icons.delete_outline),
                       ),
                     ],

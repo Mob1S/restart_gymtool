@@ -1,5 +1,6 @@
 import '../../domain/record_management.dart';
 import '../../domain/workout_edit.dart';
+import '../../domain/weight_value.dart';
 import '../../domain/rest.dart';
 import '../db/sql_executor.dart';
 import 'record_management_repo.dart';
@@ -38,6 +39,7 @@ Future<void> updateCompletedSet(
   CompletedSetEdit edit, {
   required double weight,
   required int reps,
+  EquipmentWeight? reading,
 }) async {
   if (!weight.isFinite || weight < 0 || reps < 0) {
     throw const RecordManagementException('重量或次数无效');
@@ -50,10 +52,9 @@ Future<void> updateCompletedSet(
       [edit.original.id, edit.original.sessionExerciseId, edit.sessionId],
     );
     if (row == null) throw const RecordManagementException('记录已变化，请重新打开后修改');
-    await tx.run(
-      'UPDATE set_entry SET weight=?, reps=? WHERE id=? AND session_exercise_id=? AND is_completed=1',
-      [weight, reps, edit.original.id, edit.original.sessionExerciseId],
-    );
+    // updateSetValues validates canonical/source consistency and writes the
+    // three weight columns together after ownership and token checks above.
+    await updateSetValues(tx, edit.original.id, weight, reps, reading: reading);
   });
 }
 

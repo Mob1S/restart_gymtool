@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../domain/backup.dart';
 import '../../domain/backup_codec.dart';
+import '../../domain/backup_upgrade.dart';
 import '../db/migrations.dart';
 import '../db/sql_executor.dart';
 
@@ -27,8 +28,16 @@ String _column(String field) =>
 const _tables = {
   'exercisePreferences': _Table(
     'exercise_preference',
-    ['exerciseId', 'weightStepMilli', 'isFavorite', 'equipmentNote'],
-    {'isFavorite'},
+    [
+      'exerciseId',
+      'weightUnit',
+      'kgStep',
+      'lbStep',
+      'showKgEquivalent',
+      'isFavorite',
+      'equipmentNote',
+    ],
+    {'showKgEquivalent', 'isFavorite'},
   ),
   'exercises': _Table(
     'exercise',
@@ -50,6 +59,10 @@ const _tables = {
     'finishedAt',
     'note',
     'templateId',
+    'planId',
+    'planNameSnapshot',
+    'dayNameSnapshot',
+    'origin',
   ]),
   'sessionExercises': _Table('session_exercise', [
     'id',
@@ -70,6 +83,8 @@ const _tables = {
       'restSeconds',
       'restStartedAt',
       'completedAt',
+      'sourceWeight',
+      'sourceUnit',
     ],
     {'isCompleted'},
   ),
@@ -78,7 +93,9 @@ const _tables = {
     'name',
     'position',
     'createdAt',
+    'planId',
   ]),
+  'plans': _Table('training_plan', ['id', 'name', 'position', 'createdAt']),
   'templateExercises': _Table('template_exercise', [
     'id',
     'templateId',
@@ -141,13 +158,16 @@ Future<BackupPreview> inspectBackup(
   SqlExecutor exec,
   BackupFile incoming,
 ) async {
-  final validated = validateBackup(incoming.toJson());
+  // Check the source byte limit before normalization as well as the expanded
+  // v4 size; neither legacy defaults nor new parent rows bypass the limits.
+  encodeBackup(incoming);
+  final validated = validateBackup(upgradeBackupToV4(incoming.toJson()));
   encodeBackup(validated);
   return BackupPreview._(validated, await exportBackup(exec, exportedAt: 0));
 }
 
 Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
-  final incoming = validateBackup(preview.incoming.toJson());
+  final incoming = validateBackup(upgradeBackupToV4(preview.incoming.toJson()));
   await exec.transaction((tx) async {
     final current = await _snapshot(tx, 0);
     if (jsonEncode(current.data) != preview._baseline) {
@@ -159,6 +179,7 @@ Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
       'session',
       'template_exercise',
       'split_template',
+      'training_plan',
       'exercise_preference',
       'exercise',
     ]) {
@@ -167,6 +188,7 @@ Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
     for (final key in [
       'exercises',
       'exercisePreferences',
+      'plans',
       'templates',
       'templateExercises',
       'sessions',

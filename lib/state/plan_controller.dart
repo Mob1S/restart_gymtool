@@ -1,20 +1,29 @@
 import 'package:flutter/foundation.dart';
 
 import '../data/db/sql_executor.dart';
-import '../data/repositories/template_repo.dart';
+import '../data/ids.dart';
+import '../data/repositories/training_plan_repo.dart';
 import '../domain/plans.dart';
+import '../domain/training_plans.dart';
 
 class PlanController extends ChangeNotifier {
   final SqlExecutor exec;
   final VoidCallback onChanged;
-  final void Function(String id)? onDeleted;
-  PlanController(this.exec, {required this.onChanged, this.onDeleted});
-  List<TemplateSummary> plans = [];
-  TemplateDraft? draft;
-  bool busy = false;
-  bool dirty = false;
-  bool _disposed = false;
+  final ValueChanged<String>? onDayDeleted, onPlanDeleted;
+  PlanController(
+    this.exec, {
+    required this.onChanged,
+    this.onDayDeleted,
+    this.onPlanDeleted,
+  });
+
+  List<TrainingPlanDetail> plans = [];
+  TrainingPlanDraft? draft;
+  List<String> dayKeys = [];
+  Set<String> _savedDayIds = {};
+  bool busy = false, dirty = false, _disposed = false;
   String? message;
+
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -37,141 +46,153 @@ class PlanController extends ChangeNotifier {
 
   Future<void> loadList() async {
     await _run(() async {
-      plans = await listTemplates(exec);
+      plans = await listTrainingPlans(exec);
     });
   }
 
   Future<void> loadDraft(String? id) async {
+    if (busy) return;
     draft = null;
     dirty = false;
+    dayKeys = [];
+    _savedDayIds = {};
     await _run(() async {
-      if (id == null) {
-        draft = TemplateDraft(name: '', exerciseIds: []);
-        return;
-      }
-      final existing = await getTemplate(exec, id);
-      if (existing == null) {
+      final existing = id == null ? null : await getTrainingPlan(exec, id);
+      if (id != null && existing == null) {
         message = '这个计划不存在';
         return;
       }
-      draft = TemplateDraft(
-        id: id,
-        name: existing.template.name,
-        exerciseIds: existing.exercises.map((e) => e.entry.exerciseId).toList(),
-        expectedToken: existing.editToken,
-      );
+      draft = existing?.toDraft() ?? TrainingPlanDraft(name: '', days: []);
+      dayKeys = [for (final day in draft!.days) day.id ?? newId()];
+      _savedDayIds = {
+        for (final day in draft!.days)
+          if (day.id != null) day.id!,
+      };
     });
   }
 
-  void _edit(String name, List<String> ids) {
+  void _edit(String name, List<TrainingDayDraft> days) {
     final d = draft;
-    if (d == null || busy) return;
-    draft = TemplateDraft(
+    if (d == null || busy || _disposed) return;
+    draft = TrainingPlanDraft(
       id: d.id,
-      name: name,
-      exerciseIds: ids,
       expectedToken: d.expectedToken,
+      name: name,
+      days: days,
     );
     dirty = true;
     _notify();
   }
 
   void updateName(String name) {
-    final d = draft;
-    if (d != null) _edit(name, d.exerciseIds);
+    if (draft != null) _edit(name, draft!.days);
   }
 
-  void addExercise(String id) => addExercises([id]);
-  void addExercises(List<String> exerciseIds) {
-    final current = draft;
-    if (_disposed || busy || current == null || exerciseIds.isEmpty) return;
-    _edit(current.name, [...current.exerciseIds, ...exerciseIds]);
+  void addDay(TrainingDayDraft day) {
+    if (draft == null || busy) return;
+    dayKeys = [...dayKeys, newId()];
+    _edit(draft!.name, [...draft!.days, day]);
   }
 
-  void removeDraftItem(int index) {
+  void updateDay(int index, TrainingDayDraft day) {
     final d = draft;
-    if (d == null || index < 0 || index >= d.exerciseIds.length) return;
-    _edit(d.name, [...d.exerciseIds]..removeAt(index));
+    if (d == null || busy || index < 0 || index >= d.days.length) return;
+    final days = [...d.days];
+    days[index] = TrainingDayDraft(
+      id: d.days[index].id,
+      name: day.name,
+      exerciseIds: day.exerciseIds,
+    );
+    _edit(d.name, days);
   }
 
-  void moveDraftItem(int index, int direction) {
+  void removeDay(int index) {
     final d = draft;
+    if (d == null || busy || index < 0 || index >= d.days.length) return;
+    dayKeys = [...dayKeys]..removeAt(index);
+    _edit(d.name, [...d.days]..removeAt(index));
+  }
+
+  void moveDay(int index, int direction) {
+    final d = draft;
+    final target = index + direction;
     if (d == null ||
+        busy ||
         index < 0 ||
-        index >= d.exerciseIds.length ||
-        index + direction < 0 ||
-        index + direction >= d.exerciseIds.length) {
+        index >= d.days.length ||
+        target < 0 ||
+        target >= d.days.length) {
       return;
     }
-    final ids = [...d.exerciseIds];
-    final id = ids.removeAt(index);
-    ids.insert(index + direction, id);
-    _edit(d.name, ids);
+    final days = [...d.days];
+    days.insert(target, days.removeAt(index));
+    final keys = [...dayKeys];
+    keys.insert(target, keys.removeAt(index));
+    dayKeys = keys;
+    _edit(d.name, days);
   }
 
   Future<bool> saveDraft() async {
     final d = draft;
     if (d == null) return false;
-    final saved = await _run(() async {
-      final result = await saveTemplate(exec, d);
-      dirty = false;
-      draft = TemplateDraft(
-        id: result.template.id,
-        name: result.template.name,
-        exerciseIds: result.exercises.map((e) => e.entry.exerciseId).toList(),
-        expectedToken: result.editToken,
-      );
-      try {
-        onChanged();
-      } catch (_) {
-        message = '计划已保存，请重新打开查看';
-      }
-      return true;
-    });
-    return saved == true;
+    return await _run(() async {
+          final result = await saveTrainingPlan(exec, d);
+          final retained = {for (final day in result.days) day.id};
+          draft = result.toDraft();
+          dayKeys = [for (final day in result.days) day.id];
+          dirty = false;
+          try {
+            for (final removed in _savedDayIds.difference(retained)) {
+              onDayDeleted?.call(removed);
+            }
+            onChanged();
+          } catch (_) {
+            message = '计划已保存，请重新打开查看';
+          }
+          _savedDayIds = retained;
+          return true;
+        }) ==
+        true;
   }
 
   Future<void> movePlan(String id, int direction) async {
     await _run(() async {
-      if (await moveTemplate(exec, id, direction, templateOrderToken(plans))) {
-        try {
-          onChanged();
-          plans = await listTemplates(exec);
-        } catch (_) {
-          message = '计划顺序已保存，请重新打开查看';
-        }
-      } else {
-        plans = await listTemplates(exec);
-      }
+      await moveTrainingPlan(
+        exec,
+        id,
+        direction,
+        expectedOrderToken: trainingPlanOrderToken(plans),
+      );
+      onChanged();
+      plans = await listTrainingPlans(exec);
     });
   }
 
-  Future<TemplateDeletePreview?> previewDelete(String id) =>
-      _run<TemplateDeletePreview?>(() => inspectTemplateDeletion(exec, id));
-  Future<bool> confirmDelete(TemplateDeletePreview preview) async {
-    final ok = await _run(() async {
-      final result = await deleteTemplate(exec, preview);
-      if (result.deleted) {
+  Future<bool> confirmDelete(TrainingPlanDetail preview) async =>
+      await _run(() async {
+        await deleteTrainingPlan(
+          exec,
+          preview.id,
+          expectedToken: preview.token,
+        );
         try {
-          onDeleted?.call(preview.id);
+          onPlanDeleted?.call(preview.id);
           onChanged();
         } catch (_) {
           message = '计划已删除，请重新打开查看';
         }
-      }
-      try {
-        plans = await listTemplates(exec);
-      } catch (_) {
-        message = '计划已删除，请重新打开查看';
-      }
-      return result.deleted;
-    });
-    return ok == true;
-  }
-
+        try {
+          plans = await listTrainingPlans(exec);
+        } catch (_) {
+          message = '计划已删除，请重新打开查看';
+        }
+        return true;
+      }) ==
+      true;
   void discardDraft() {
     if (busy) return;
     draft = null;
+    dayKeys = [];
     dirty = false;
     _notify();
   }

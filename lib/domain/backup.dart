@@ -1,5 +1,9 @@
+import 'dart:math' as math;
+
+import 'weight_value.dart';
+
 const backupFormat = 'gym-tracker-backup';
-const backupVersion = 3;
+const backupVersion = 4;
 const maxBackupBytes = 20 * 1024 * 1024;
 const maxBackupRecords = 100000;
 const maxBackupTimestamp = 8640000000000000;
@@ -107,6 +111,57 @@ const _fields = <String, Map<String, _Field>>{
   },
 };
 
+Map<String, Map<String, _Field>> _versionFields(int version) => {
+  ..._fields,
+  if (version >= 4) ...{
+    'plans': {
+      'id': _Field.id,
+      'name': _Field.id,
+      'position': _Field.integer,
+      'createdAt': _Field.time,
+    },
+    'templates': {..._fields['templates']!, 'planId': _Field.id},
+    'sessions': {
+      ..._fields['sessions']!,
+      'planId': _Field.nullableText,
+      'planNameSnapshot': _Field.nullableText,
+      'dayNameSnapshot': _Field.nullableText,
+      'origin': _Field.id,
+    },
+    'sets': {
+      ..._fields['sets']!,
+      'sourceWeight': _Field.nullableText,
+      'sourceUnit': _Field.id,
+    },
+    'exercisePreferences': {
+      'exerciseId': _Field.id,
+      'weightUnit': _Field.id,
+      'kgStep': _Field.text,
+      'lbStep': _Field.text,
+      'showKgEquivalent': _Field.boolean,
+      'isFavorite': _Field.boolean,
+      'equipmentNote': _Field.text,
+    },
+  },
+};
+
+DecimalReading _decimal(Object? value, String path, {bool positive = false}) {
+  if (value is! String) _fail(path, '必须是十进制文本');
+  try {
+    final reading = DecimalReading.parse(value);
+    if (positive && reading.asDouble <= 0) _fail(path, '必须大于 0');
+    return reading;
+  } on FormatException {
+    _fail(path, '必须是非负有限十进制数');
+  }
+}
+
+WeightUnit _unit(Object? value, String path) => switch (value) {
+  'kg' => WeightUnit.kg,
+  'lb' => WeightUnit.lb,
+  _ => _fail(path, '必须是 kg 或 lb'),
+};
+
 Never _fail(String path, String reason) =>
     throw BackupValidationException('$path $reason');
 
@@ -164,22 +219,27 @@ BackupFile validateBackup(Object? input) {
   if (root['format'] != backupFormat) _fail('format', '不是本应用的备份文件');
   final version = root['version'];
   if (version is! int || version < 1 || version > backupVersion) {
-    _fail('version', '不受支持，请使用格式 1 / 2 / 3 的备份；新版本文件请先升级应用');
+    _fail('version', '不受支持，请使用格式 1 / 2 / 3 / 4 的备份；新版本文件请先升级应用');
   }
   final schema = root['schemaVersion'];
   if (schema is! int ||
       schema < 1 ||
-      (version == 3 ? schema != 5 : schema > 4)) {
+      switch (version) {
+        4 => schema != 6,
+        3 => schema < 5 || schema > 6,
+        _ => schema > 4,
+      }) {
     _fail('schemaVersion', '不受支持，请先升级应用');
   }
   if (!root.containsKey('exportedAt')) _fail('exportedAt', '缺少字段');
   final exportedAt =
       _value(root['exportedAt'], _Field.time, 'exportedAt') as int;
   final raw = _object(root['data'], 'data');
+  final fields = _versionFields(version);
   var count = 0;
   final sources = <String, List>{};
   final normalized = <String, List<Map<String, Object?>>>{};
-  for (final table in _fields.entries) {
+  for (final table in fields.entries) {
     final name = table.key;
     if (name == 'settings' && !raw.containsKey(name)) continue;
     if (name == 'exercisePreferences' && version < 3) continue;
@@ -194,7 +254,7 @@ BackupFile validateBackup(Object? input) {
     if (count > maxBackupRecords) _fail('data', '记录总数超过 100,000 条上限');
     sources[name] = source;
   }
-  for (final table in _fields.entries) {
+  for (final table in fields.entries) {
     final name = table.key;
     final source = sources[name];
     if (source == null) continue;
@@ -226,8 +286,14 @@ BackupFile validateBackup(Object? input) {
           : 'id';
       final id = row[key] as String;
       if (name == 'exercisePreferences') {
-        if (![500, 1000, 1250, 2500, 5000].contains(row['weightStepMilli'])) {
+        if (version < 4 &&
+            ![500, 1000, 1250, 2500, 5000].contains(row['weightStepMilli'])) {
           _fail(path, '调重幅度无效');
+        }
+        if (version >= 4) {
+          _unit(row['weightUnit'], '$path 的 weightUnit');
+          _decimal(row['kgStep'], '$path 的 kgStep', positive: true);
+          _decimal(row['lbStep'], '$path 的 lbStep', positive: true);
         }
         if ((row['equipmentNote'] as String).runes.length > 500) {
           _fail(path, '器械备忘最多 500 个字符');
@@ -257,7 +323,7 @@ BackupFile validateBackup(Object? input) {
     }
   }
 
-  if (version == 3) {
+  if (version >= 3) {
     references('exercisePreferences', 'exerciseId', 'exercises');
   }
   references('sessionExercises', 'sessionId', 'sessions');
@@ -266,6 +332,40 @@ BackupFile validateBackup(Object? input) {
   references('templateExercises', 'templateId', 'templates');
   references('templateExercises', 'exerciseId', 'exercises');
   references('sessions', 'templateId', 'templates', nullable: true);
+  if (version >= 4) {
+    references('templates', 'planId', 'plans');
+    references('sessions', 'planId', 'plans', nullable: true);
+    final templates = {
+      for (final row in normalized['templates']!) row['id']: row,
+    };
+    for (final row in normalized['sessions']!) {
+      final template = templates[row['templateId']];
+      if (template != null && template['planId'] != row['planId']) {
+        _fail('data.sessions ${row['id']}', '训练日与计划不匹配');
+      }
+      if (!{'legacy', 'live', 'manual', 'csv'}.contains(row['origin'])) {
+        _fail('data.sessions ${row['id']} 的 origin', '训练来源无效');
+      }
+    }
+    for (final row in normalized['sets']!) {
+      final path = 'data.sets ${row['id']}';
+      final unit = _unit(row['sourceUnit'], '$path 的 sourceUnit');
+      final source = row['sourceWeight'];
+      if (source == null) {
+        if (unit != WeightUnit.kg) _fail(path, '缺少磅数原始读数');
+        continue;
+      }
+      final reading = EquipmentWeight(
+        _decimal(source, '$path 的 sourceWeight'),
+        unit,
+      );
+      final weight = row['weight'] as double;
+      final tolerance = math.max(1e-9, weight.abs() * 1e-12);
+      if ((reading.kilograms - weight).abs() > tolerance) {
+        _fail(path, '原始读数与标准 kg 重量不一致');
+      }
+    }
+  }
   final result = BackupFile._(
     version,
     schema,

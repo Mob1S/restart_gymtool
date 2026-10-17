@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const webRoot = path.join(root, 'build', 'web');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const feature = process.env.GYM_BROWSER_FEATURE;
-assert(!feature || ['import', 'plans', 'workout_efficiency'].includes(feature));
+assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign'].includes(feature));
 const output = path.join(root, 'build', 'acceptance', `browser-${feature || 'backup'}-${stamp}`);
 const chromePath = process.env.CHROME_EXECUTABLE || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -86,7 +86,9 @@ async function evaluate(expression) {
 }
 const semanticsExpression = `Array.from(document.querySelectorAll('flt-semantics')).map(e => {
   const r = e.getBoundingClientRect();
-  return {text: e.getAttribute('aria-label') || Array.from(e.querySelectorAll('input,textarea')).map(i=>i.getAttribute('aria-label') || i.placeholder || '').filter(Boolean).join('\\n') || e.innerText || '', role: e.getAttribute('role'),
+  const slider = e.querySelector('input[type=range]');
+  const editable = Array.from(e.querySelectorAll('input:not([type=range]),textarea')).find(i=>i.closest('flt-semantics')===e);
+  return {id:e.id, text: e.getAttribute('aria-label') || Array.from(e.querySelectorAll('input,textarea')).map(i=>i.getAttribute('aria-label') || i.placeholder || '').filter(Boolean).join('\\n') || e.innerText || '', role: e.getAttribute('role') || slider?.getAttribute('role') || (editable ? 'textbox' : null), value: e.getAttribute('aria-valuetext') || slider?.getAttribute('aria-valuetext') || '', disabled: e.getAttribute('aria-disabled') === 'true',
     x: r.x, y: r.y, width: r.width, height: r.height};
 }).filter(e => e.width && e.height)`;
 async function semantics() {
@@ -97,20 +99,41 @@ async function semantics() {
   })()`);
   return evaluate(semanticsExpression);
 }
-async function has(text) { return (await semantics()).some(e => e.text.includes(text)); }
+async function has(text) { return (await semantics()).some(e => e.text.includes(text) || e.value?.includes(text)); }
 async function expectText(text) { await until(() => has(text), `text: ${text}`); }
 async function clickAt(x, y) {
+  await send('Input.dispatchMouseEvent', {type:'mouseMoved',x,y});
+  await delay(50);
   for (const type of ['mousePressed', 'mouseReleased']) {
-    await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons:type==='mousePressed'?1:0, clickCount: 1 });
   }
   await delay(400);
 }
 async function clickText(text, exact = false) {
+  let previous;
   const element = await until(async () => {
-    const matches = (await semantics()).filter(e => (exact ? e.text === text : e.text.includes(text)) && (text.startsWith('收藏 ') || !e.text.startsWith('收藏 ')));
-    return matches.sort((a, b) => a.width * a.height - b.width * b.height)[0];
+    const matches = (await semantics()).filter(e => !e.disabled && (exact ? e.text === text || e.value === text : e.text.includes(text) || e.value?.includes(text)) && (text.startsWith('收藏 ') || !e.text.startsWith('收藏 ')));
+    const next = matches.sort((a, b) => a.width * a.height - b.width * b.height)[0];
+    const stable = next && previous && next.x === previous.x && next.y === previous.y && next.width === previous.width && next.height === previous.height;
+    previous = next;
+    if(!stable) return null;
+    const clear=await evaluate(`(()=>{const target=document.getElementById(${JSON.stringify(next.id)});const hit=document.elementFromPoint(${next.x+next.width/2},${next.y+next.height/2});return !!target&&!!hit&&(target.contains(hit)||hit.contains(target))})()`);
+    return clear ? next : null;
   }, `clickable text: ${text}`);
   await clickAt(element.x + element.width / 2, element.y + element.height / 2);
+}
+async function tapText(text) {
+  await delay(200);
+  const e=await until(async()=>{
+    const next=(await semantics()).find(e=>e.text===text&&e.role==='button'&&!e.disabled);
+    if(!next) return null;
+    const clear=await evaluate(`(()=>{const target=document.getElementById(${JSON.stringify(next.id)});const hit=document.elementFromPoint(${next.x+next.width/2},${next.y+next.height/2});return !!target&&!!hit&&(target.contains(hit)||hit.contains(target))})()`);
+    return clear?next:null;
+  },'unobscured touch target '+text);
+  const point={x:e.x+e.width/2,y:e.y+e.height/2};
+  await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});
+  await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await delay(400);
 }
 async function screenshot(name) {
   const shot = await send('Page.captureScreenshot', { format: 'png' });
@@ -157,6 +180,15 @@ async function exportFile(label) {
   assert.match(downloadNames.get(guid), /^gym-backup-\d{4}-\d{2}-\d{2}-\d{6}\.json$/);
   await expectText('已请求下载备份');
   return { file, data };
+}
+async function downloadCsv() {
+  await clickText('历史', true);
+  const previous = new Set(downloads.keys());
+  await clickText('记录操作');
+  await clickText('导出当前列表 CSV');
+  const guid = await until(() => [...downloads].find(([id,state]) => !previous.has(id) && state === 'completed')?.[0], 'CSV download completed');
+  assert.match(downloadNames.get(guid), /\.csv$/);
+  return {file:path.join(downloadDirectory,guid), text:await readFile(path.join(downloadDirectory,guid),'utf8')};
 }
 async function selectFile(file) {
   await clickText('设置', true);
@@ -229,8 +261,8 @@ try {
   await send('Page.setInterceptFileChooserDialog', { enabled: true });
   if (feature) {
     const { run } = await import(`./browser_${feature}_smoke.mjs`);
-    await run({check,clickText,clickAt,expectText,has,semantics,send,evaluate,screenshot,
-      until,exportFile,restoreFile,selectFile,root,output,origin,
+    await run({check,clickText,clickAt,tapText,expectText,has,semantics,send,evaluate,screenshot,
+      until,exportFile,restoreFile,selectFile,downloadCsv,root,output,origin,
       upload:async(file)=>{chooser=null;await clickText('选择 CSV 文件',true);await until(()=>chooser,'CSV file chooser');await send('DOM.setFileInputFiles',{files:[file],backendNodeId:chooser.backendNodeId});},
     });
   } else {
@@ -245,7 +277,7 @@ try {
     await clickText('设置', true); await clickText('深色', true);
     baseline = await exportFile('01-original-backup');
     assert.equal(baseline.data.format, 'gym-tracker-backup');
-    assert.equal(baseline.data.version, 3); assert.equal(baseline.data.schemaVersion, 5);
+    assert.equal(baseline.data.version, 4); assert.equal(baseline.data.schemaVersion, 6);
     assert.equal(baseline.data.data.sessions.length, 1);
     assert.equal(baseline.data.data.sets[0].weight, 20); assert.equal(baseline.data.data.sets[0].reps, 8);
     assert(baseline.data.data.settings.some(row => row.key === 'theme_mode' && row.value === 'dark'));
@@ -290,9 +322,18 @@ try {
       for (const key of Object.keys(expected.data)) {
         const rows = structuredClone(expected.data[key]);
         if (key === 'sessions' && name === 'legacy-v1') rows.forEach(row => { row.templateId ??= null; });
-        assert.deepEqual(restored.data[key], rows, `${name}.${key}`);
+        assert.equal(restored.data[key].length, rows.length, `${name}.${key} count`);
+        for (let i=0;i<rows.length;i++) {
+          for (const [field,value] of Object.entries(rows[i])) {
+            assert.deepEqual(restored.data[key][i][field], value, `${name}.${key}[${i}].${field}`);
+          }
+        }
       }
       assert(restored.data.settings.some(row => row.key === 'theme_mode' && row.value === 'dark'));
+      assert(restored.data.sessions.every(row => row.origin === 'legacy'));
+      assert(restored.data.sets.every(row => row.sourceUnit === 'kg' && Number(row.sourceWeight) === row.weight));
+      assert.equal(restored.data.plans.length, expected.data.templates?.length ? 1 : 0);
+      assert(restored.data.templates.every(row => row.planId === restored.data.plans[0].id));
       await screenshot(`08-${name}`);
     }
   });

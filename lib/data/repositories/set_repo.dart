@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import '../../domain/types.dart';
+import '../../domain/weight_value.dart';
 import '../db/sql_executor.dart';
 import '../ids.dart';
 
@@ -11,6 +14,7 @@ class SetRow {
   final String sessionExerciseId;
   final int position;
   final double weight;
+  final EquipmentWeight? recordedWeight;
   final int reps;
   final int isCompleted;
   final int? restSeconds;
@@ -22,6 +26,7 @@ class SetRow {
     required this.sessionExerciseId,
     required this.position,
     required this.weight,
+    this.recordedWeight,
     required this.reps,
     required this.isCompleted,
     this.restSeconds,
@@ -34,6 +39,12 @@ class SetRow {
     sessionExerciseId: m['session_exercise_id'] as String,
     position: m['position'] as int,
     weight: (m['weight'] as num).toDouble(),
+    recordedWeight: m['source_weight'] == null
+        ? null
+        : EquipmentWeight(
+            DecimalReading.parse(m['source_weight'] as String),
+            WeightUnit.values.byName(m['source_unit'] as String),
+          ),
     reps: m['reps'] as int,
     isCompleted: m['is_completed'] as int,
     restSeconds: m['rest_seconds'] as int?,
@@ -48,6 +59,7 @@ SetEntry toSetEntry(SetRow row) => SetEntry(
   sessionExerciseId: row.sessionExerciseId,
   position: row.position,
   weight: row.weight,
+  recordedWeight: row.recordedWeight,
   reps: row.reps,
   isCompleted: row.isCompleted == 1,
   restSeconds: row.restSeconds,
@@ -56,7 +68,7 @@ SetEntry toSetEntry(SetRow row) => SetEntry(
 );
 
 const String setColumns =
-    'id, session_exercise_id, position, weight, reps, is_completed, rest_seconds, rest_started_at, completed_at';
+    'id, session_exercise_id, position, weight, reps, is_completed, rest_seconds, rest_started_at, completed_at, source_weight, source_unit';
 
 /// 与 [setColumns] 同一组列，但带 `st.` 前缀。
 ///
@@ -64,7 +76,20 @@ const String setColumns =
 /// `session_exercise` 的查询都必须用带前缀的版本，否则 SQLite 直接报
 /// `ambiguous column name: id`（实测：prepare 阶段就抛，不是取数阶段）。
 const String setColumnsPrefixed =
-    'st.id, st.session_exercise_id, st.position, st.weight, st.reps, st.is_completed, st.rest_seconds, st.rest_started_at, st.completed_at';
+    'st.id, st.session_exercise_id, st.position, st.weight, st.reps, st.is_completed, st.rest_seconds, st.rest_started_at, st.completed_at, st.source_weight, st.source_unit';
+
+EquipmentWeight _validatedReading(double weight, EquipmentWeight? reading) {
+  if (!weight.isFinite || weight < 0) {
+    throw const FormatException('标准重量必须为有限非负数');
+  }
+  final source = reading ?? EquipmentWeight.kg(weight);
+  final tolerance = math.max(1e-9, weight.abs() * 1e-12);
+  if (!source.kilograms.isFinite ||
+      (source.kilograms - weight).abs() > tolerance) {
+    throw const FormatException('器械读数与标准重量不一致');
+  }
+  return source;
+}
 
 /// 追加一组，`position` 取当前最大值 +1（第一组是 0）。
 ///
@@ -76,8 +101,10 @@ Future<SetEntry> addSet(
   SqlExecutor exec,
   String sessionExerciseId,
   double weight,
-  int reps,
-) async {
+  int reps, {
+  EquipmentWeight? reading,
+}) async {
+  final source = _validatedReading(weight, reading);
   final row = await exec.first<Map<String, Object?>>(
     'SELECT MAX(position) + 1 AS next FROM set_entry WHERE session_exercise_id = ?',
     [sessionExerciseId],
@@ -88,16 +115,25 @@ Future<SetEntry> addSet(
     id: newId(),
     sessionExerciseId: sessionExerciseId,
     position: position,
-    weight: weight,
+    weight: source.kilograms,
+    recordedWeight: source,
     reps: reps,
     isCompleted: false,
   );
 
   await exec.run(
     '''INSERT INTO set_entry
-         (id, session_exercise_id, position, weight, reps, is_completed, rest_seconds, rest_started_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, 0, NULL, NULL, NULL)''',
-    [set.id, sessionExerciseId, position, weight, reps],
+         (id, session_exercise_id, position, weight, reps, is_completed, rest_seconds, rest_started_at, completed_at, source_weight, source_unit)
+       VALUES (?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?, ?)''',
+    [
+      set.id,
+      sessionExerciseId,
+      position,
+      source.kilograms,
+      reps,
+      source.amount.text,
+      source.unit.name,
+    ],
   );
 
   return set;
@@ -126,13 +162,14 @@ Future<void> updateSetValues(
   SqlExecutor exec,
   String setId,
   double weight,
-  int reps,
-) async {
-  await exec.run('UPDATE set_entry SET weight = ?, reps = ? WHERE id = ?', [
-    weight,
-    reps,
-    setId,
-  ]);
+  int reps, {
+  EquipmentWeight? reading,
+}) async {
+  final source = _validatedReading(weight, reading);
+  await exec.run(
+    'UPDATE set_entry SET weight = ?, reps = ?, source_weight = ?, source_unit = ? WHERE id = ?',
+    [source.kilograms, reps, source.amount.text, source.unit.name, setId],
+  );
 }
 
 /// 标记一组已完成。**这一步必须立刻落盘** —— 训练记录的全部价值就在于不丢，

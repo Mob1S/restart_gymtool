@@ -11,6 +11,14 @@ const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const output = path.join(root, 'build', 'acceptance', `backup-mutations-${stamp}`);
 await mkdir(output, { recursive: true });
 const cases = [
+  { name: 'native-weight-consistency', file: 'lib/domain/backup.dart',
+    before: 'if ((reading.kilograms - weight).abs() > tolerance)',
+    after: 'if (false)',
+    test: 'test/data/backup_v4_test.dart' },
+  { name: 'parent-plan-reference', file: 'lib/domain/backup.dart',
+    before: "references('templates', 'planId', 'plans');",
+    after: '// Deliberately omit the parent reference guard.',
+    test: 'test/data/backup_v4_test.dart' },
   { name: 'transaction', file: 'lib/data/repositories/backup_repo.dart',
     before: 'await exec.transaction((tx) async {',
     after: 'await Future.sync(() async { final tx = exec;',

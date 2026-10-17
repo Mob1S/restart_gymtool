@@ -1,21 +1,40 @@
 import 'types.dart';
+import 'weight_value.dart';
 
 const weightStepOptions = [500, 1000, 1250, 2500, 5000];
 
 class ExercisePreference {
   final String exerciseId;
-  final int weightStepMilli;
+  final int _legacyWeightStepMilli;
+  final DecimalReading? _kgStep;
+  final DecimalReading? _lbStep;
+  final WeightUnit weightUnit;
+  final bool showKgEquivalent;
   final bool isFavorite;
   final String equipmentNote;
   final String token;
   const ExercisePreference({
     required this.exerciseId,
-    this.weightStepMilli = 2500,
+    int weightStepMilli = 2500,
+    DecimalReading? kgStep,
+    DecimalReading? lbStep,
+    this.weightUnit = WeightUnit.kg,
+    this.showKgEquivalent = false,
     this.isFavorite = false,
     this.equipmentNote = '',
     required this.token,
-  });
-  double get weightStepKg => weightStepMilli / 1000;
+  }) : _legacyWeightStepMilli = weightStepMilli,
+       // Keep the public kgStep/lbStep parameter names for repository callers.
+       // ignore: prefer_initializing_formals
+       _kgStep = kgStep,
+       // ignore: prefer_initializing_formals
+       _lbStep = lbStep;
+  DecimalReading get kgStep =>
+      _kgStep ??
+      DecimalReading.parse((_legacyWeightStepMilli / 1000).toString());
+  DecimalReading get lbStep => _lbStep ?? DecimalReading.parse('5');
+  int get weightStepMilli => (kgStep.asDouble * 1000).round();
+  double get weightStepKg => kgStep.asDouble;
 }
 
 class ExercisePickerData {

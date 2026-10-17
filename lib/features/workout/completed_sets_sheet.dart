@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../domain/format.dart';
+import '../../domain/weight_value.dart';
 import '../../state/active_session_controller.dart';
 import '../../state/exercise_preferences_controller.dart';
 import 'edit_set_sheet.dart';
@@ -34,7 +34,7 @@ Future<void> showCompletedSetsSheet(
                     in item.sets.where((s) => s.isCompleted).indexed)
                   ListTile(
                     title: Text(
-                      '第 ${index + 1} 组 · ${formatWeightKg(set.weight)} kg × ${set.reps}',
+                      '第 ${index + 1} 组 · ${set.equipmentWeight.label} × ${set.reps}',
                     ),
                     trailing: const Icon(Icons.edit_outlined),
                     onTap: controller.writing
@@ -51,12 +51,21 @@ Future<void> showCompletedSetsSheet(
                                 edit,
                                 item.exerciseName,
                                 index + 1,
-                                preferences
-                                        ?.preferenceFor(
-                                          item.sessionExercise.exerciseId,
-                                        )
-                                        .weightStepKg ??
-                                    2.5,
+                                set.equipmentWeight.unit == WeightUnit.lb
+                                    ? preferences
+                                              ?.preferenceFor(
+                                                item.sessionExercise.exerciseId,
+                                              )
+                                              .lbStep
+                                              .asDouble ??
+                                          5
+                                    : preferences
+                                              ?.preferenceFor(
+                                                item.sessionExercise.exerciseId,
+                                              )
+                                              .kgStep
+                                              .asDouble ??
+                                          2.5,
                               );
                             } catch (e) {
                               if (context.mounted) {

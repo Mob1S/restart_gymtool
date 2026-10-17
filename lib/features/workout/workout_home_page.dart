@@ -2,48 +2,63 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../domain/format.dart';
+import '../../data/repositories/executor_access.dart';
+import '../../data/repositories/exercise_repo.dart';
+import '../../data/repositories/session_repo.dart';
+import '../../data/repositories/settings_repo.dart';
+import '../../data/repositories/training_plan_repo.dart';
+import '../../data/repositories/workout_plan_repo.dart';
+import '../../domain/local_date.dart';
+import '../../domain/plans.dart';
 import '../../domain/session_label.dart';
-import '../../domain/types.dart';
+import '../../domain/training_plans.dart';
 import '../../state/active_session_controller.dart';
+import '../../state/data_revision.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
 import '../../ui/widgets/app_card.dart';
 import '../../ui/widgets/primary_button.dart';
-import 'conflict_dialog.dart';
-import '../../data/repositories/executor_access.dart';
-import '../../data/repositories/workout_plan_repo.dart';
-import '../../data/repositories/template_repo.dart';
-import '../../domain/plans.dart';
 import '../plans/plan_picker.dart';
-import '../../state/data_revision.dart';
+import 'conflict_dialog.dart';
+import 'training_calendar.dart';
 
-/// 训练首页。它要回答两个问题：
-/// 1. 有没有没练完的（「继续 今天 15:20 的训练 · 深蹲 等 3 个动作 · 已记 12 组」）
-/// 2. 否则就开一场新的
+const activeTrainingPlanKey = 'active_training_plan_id';
+
 class WorkoutHomePage extends StatefulWidget {
   const WorkoutHomePage({super.key});
-
   @override
   State<WorkoutHomePage> createState() => _WorkoutHomePageState();
 }
 
 class _WorkoutHomePageState extends State<WorkoutHomePage> {
-  WorkoutSession? _active;
   PlannedWorkout? _planned;
-  String? _preferred;
-  String? _message;
-  bool _starting = false;
+  List<TrainingPlanDetail> _plans = [];
+  Map<String, String> _exerciseNames = {};
+  String? _selectedPlanId, _preferredDayId, _message;
+  bool _freeTraining = false, _selectionLoaded = false, _starting = false;
+  bool _planLoading = true;
   int? _revision;
+  int _planGeneration = 0, _calendarGeneration = 0;
+  DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
+  Set<String> _completed = {};
+  final _topKey = GlobalKey(),
+      _detailsKey = GlobalKey(),
+      _cardKey = GlobalKey();
+  Size? _topSize, _detailsSize, _cardSize;
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final revision = context.watch<DataRevision?>()?.value ?? 0;
-    if (_revision == revision) return;
-    _revision = revision;
+  void _measureLayout() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _loadPlan();
+      if (!mounted) return;
+      final top = _topKey.currentContext?.size;
+      final details = _detailsKey.currentContext?.size;
+      final card = _cardKey.currentContext?.size;
+      if (top != _topSize || details != _detailsSize || card != _cardSize) {
+        setState(() {
+          _topSize = top;
+          _detailsSize = details;
+          _cardSize = card;
+        });
+      }
     });
   }
 
@@ -53,69 +68,162 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _probe());
   }
 
-  /// 探一次库里有没有进行中的训练。
-  ///
-  /// **必须在挂载后再探** —— 旧项目修过一个竞态：主页刚挂载、
-  /// resume 还没跑完时用户点了「开始新训练」。
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final revision = context.watch<DataRevision?>()?.value ?? 0;
+    if (_revision == revision) return;
+    _revision = revision;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        // The start flow explicitly reloads after ending the old workout.
+        // Do not supersede that awaited load with a revision refresh.
+        if (!_starting) {
+          _loadPlan();
+        }
+        _loadMonth();
+      }
+    });
+  }
+
   Future<void> _probe() async {
-    final c = context.read<ActiveSessionController>();
-    await c.resume();
     if (!mounted) return;
-    setState(() => _active = c.session);
-    await _loadPlan();
+    await context.read<ActiveSessionController>().resume();
+    if (mounted) await _loadPlan();
+  }
+
+  Future<void> _loadMonth() async {
+    if (!mounted) return;
+    final generation = ++_calendarGeneration;
+    final month = _month;
+    try {
+      final dates = await listCompletedTrainingDates(
+        context.read<SqlExecutor>(),
+        LocalDate(month.year, month.month, 1),
+      );
+      if (mounted && generation == _calendarGeneration) {
+        setState(() => _completed = dates);
+      }
+    } catch (_) {
+      if (mounted && generation == _calendarGeneration) {
+        setState(() => _message = '月历载入失败，请稍后重试');
+      }
+    }
   }
 
   Future<void> _loadPlan() async {
+    if (!mounted) return;
+    final generation = ++_planGeneration;
+    setState(() => _planLoading = true);
+    final exec = context.read<SqlExecutor>();
     try {
+      final plans = await listTrainingPlans(exec);
+      String? selected = _selectedPlanId;
+      if (!_selectionLoaded) {
+        selected = await getSetting(exec, activeTrainingPlanKey);
+      }
+      if (!mounted || generation != _planGeneration) return;
+      _selectionLoaded = true;
+      if (selected == null || !plans.any((plan) => plan.id == selected)) {
+        selected = plans.firstOrNull?.id;
+        _preferredDayId = null;
+      }
+      final day = _preferredDayId;
+      if (day != null &&
+          !plans.any(
+            (p) => p.id == selected && p.days.any((d) => d.id == day),
+          )) {
+        _preferredDayId = null;
+      }
       final plan = await loadNextWorkout(
-        context.read<SqlExecutor>(),
-        preferredTemplateId: _preferred,
+        exec,
+        planId: _freeTraining ? null : selected,
+        preferredDayId: _freeTraining ? null : _preferredDayId,
+        freeTraining: _freeTraining || plans.isEmpty,
       );
-      if (mounted) setState(() => _planned = plan);
+      final exercises = await listExercises(exec, includeArchived: true);
+      if (!mounted || generation != _planGeneration) return;
+      setState(() {
+        _selectedPlanId = selected;
+        _plans = plans;
+        _planned = plan;
+        _exerciseNames = {for (final e in exercises) e.id: e.name};
+      });
+      if (selected != null) {
+        await setSetting(exec, activeTrainingPlanKey, selected);
+      }
     } catch (_) {
-      if (mounted) {
+      if (mounted && generation == _planGeneration) {
         setState(() {
-          _preferred = null;
           _planned = null;
           _message = '计划已变化，请重新选择';
         });
+      }
+    } finally {
+      if (mounted && generation == _planGeneration) {
+        setState(() => _planLoading = false);
       }
     }
   }
 
   Future<void> _pickPlan() async {
-    final plans = await listTemplates(context.read<SqlExecutor>());
-    if (!mounted) return;
-    final id = await showPlanPicker(context, plans);
-    if (id == null || !mounted) return;
-    _preferred = id;
+    final choice = await showPlanPicker(
+      context,
+      _plans,
+      selectedId: _freeTraining ? null : _selectedPlanId,
+    );
+    if (!mounted || choice == null) return;
+    _freeTraining = choice == freeTrainingChoice;
+    if (!_freeTraining) _selectedPlanId = choice;
+    _preferredDayId = null;
     await _loadPlan();
   }
 
+  Future<void> _pickDay() async {
+    final parent = _plans.where((p) => p.id == _selectedPlanId).firstOrNull;
+    if (parent == null || parent.days.isEmpty) return;
+    final choice = await showTrainingDayPicker(
+      context,
+      parent,
+      selectedId: _planned?.templateId,
+    );
+    if (!mounted || choice == null) return;
+    _preferredDayId = choice;
+    await _loadPlan();
+  }
+
+  Future<void> _manage() async {
+    await context.push('/plans');
+    if (mounted) await _loadPlan();
+  }
+
   Future<void> _startNew() async {
-    if (_starting) return;
-    setState(() => _starting = true);
+    if (_starting || _planLoading || _planned == null) return;
+    setState(() {
+      _starting = true;
+      _message = null;
+    });
     try {
       final c = context.read<ActiveSessionController>();
-
-      // 先刷新一次 _active，避免竞态
       await c.resume();
       if (!mounted) return;
-      setState(() => _active = c.session);
-
-      if (_active != null) {
+      if (c.session != null) {
         final choice = await showConflictDialog(
           context,
           description: _describe(c),
         );
         if (!mounted) return;
-
         switch (choice) {
           case ConflictChoice.resume:
-            context.push('/session/${_active!.id}');
+            await _continue();
             return;
           case ConflictChoice.endAndStartNew:
-            await c.endWorkout();
+            if (await c.endWorkout() == null) {
+              if (mounted) {
+                setState(() => _message = c.writeMessage ?? '无法结束上一场训练，请重试');
+              }
+              return;
+            }
             await _loadPlan();
             break;
           case ConflictChoice.cancel:
@@ -123,21 +231,24 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
             return;
         }
       }
-
+      if (!mounted || _planned == null) return;
       final result = await c.startNew(
-        preferredTemplateId: _preferred,
-        selectionToken: _planned?.selectionToken,
+        planId: _planned!.planId,
+        preferredDayId: _planned!.templateId,
+        freeTraining: _planned!.freeTraining,
+        selectionToken: _planned!.selectionToken,
       );
       if (!mounted) return;
       if (result == StartResult.started) {
+        _preferredDayId = null;
         await context.push('/session/${c.session!.id}');
         if (mounted) await _probe();
       } else if (result == StartResult.planChanged) {
-        _preferred = null;
+        _preferredDayId = null;
         await _loadPlan();
         if (mounted) setState(() => _message = '计划已变化，请核对后重新开始');
       } else if (result == StartResult.refreshFailed) {
-        if (mounted) setState(() => _message = '训练已开始，载入失败，请从继续训练入口重试');
+        setState(() => _message = '训练已开始，载入失败，请从继续训练入口重试');
       }
     } catch (_) {
       if (mounted) setState(() => _message = '无法开始训练，本次未创建新训练，请重试');
@@ -146,106 +257,208 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
     }
   }
 
-  /// 「深蹲 等 3 个动作 · 已记 12 组」。
-  ///
-  /// 主页那张「继续…的训练」卡片与冲突弹窗**共用它** —— 抽出来不是为了省几行
-  /// 代码，而是为了让「这说的是哪一场」在**这个页面里**只有一个答案。
-  /// 两处各写一遍、改一处忘一处时，用户会看到两句互相矛盾的话，
-  /// 而这个按钮存在的全部意义就是让他确认「是不是我刚才那场」。
-  ///
-  /// 真正的「唯一来源」是 `domain/session_label.dart` 的 `describeExercises`
-  /// —— 它保证的是**跨页面**一致（总结页、历史详情页都会用它）。
-  /// 这个私有包装只管本页的两处调用点。
-  ///
-  /// （计划初版写的是 `_describe(ActiveSessionController c, WorkoutSession s)`，
-  /// 但 `s` 从未被用过，且 `build()` 当时是**内联**调用而没走这个函数 ——
-  /// 于是注释里「共用同一个函数」那句在代码里并不成立。已改成名副其实。）
+  Future<void> _continue() async {
+    final session = context.read<ActiveSessionController>().session;
+    if (session == null) return;
+    await context.push('/session/${session.id}');
+    if (mounted) await _probe();
+  }
+
   String _describe(ActiveSessionController c) =>
       describeExercises(c.exercises.map((e) => e.progress).toList());
 
-  @override
-  Widget build(BuildContext context) {
-    final c = context.watch<ActiveSessionController>();
-    final sc = appColors(context);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
-      child: ListView(
+  Widget _calendar({required bool compact}) => TrainingCalendar(
+    displayedMonth: _month,
+    completedDates: _completed,
+    compact: compact,
+    onDateSelected: (date) => context.go('/history?date=${date.key}'),
+    onMonthChanged: (month) {
+      setState(() {
+        _month = month;
+        _completed = {};
+      });
+      _loadMonth();
+    },
+  );
+  Widget _planCard() {
+    final parent = _plans.where((p) => p.id == _planned?.planId).firstOrNull;
+    final planned = _planned;
+    return AppCard(
+      key: const ValueKey('home-plan-card'),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const SizedBox(height: AppSpacing.xl),
           Text(
-            '训练',
-            style: TextStyle(
-              fontSize: AppFontSize.h1,
-              fontWeight: FontWeight.w700,
-              color: sc.textPrimary,
-            ),
+            parent?.name ?? '自由训练',
+            style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: AppSpacing.xl),
-
-          if (c.session != null)
-            AppCard(
-              onTap: () => context.push('/session/${c.session!.id}'),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '继续 ${formatDateTime(c.session!.startedAt)} 的训练',
-                    style: TextStyle(
-                      fontSize: AppFontSize.title,
-                      fontWeight: FontWeight.w600,
-                      color: sc.accent,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    _describe(c),
-                    style: TextStyle(
-                      fontSize: AppFontSize.caption,
-                      color: sc.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
+          if (parent != null)
+            Text(
+              '共 ${parent.days.length} 个训练日',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
-
-          if (c.session != null) const SizedBox(height: AppSpacing.lg),
-
-          if (_message != null) Text(_message!),
-          if (_planned != null)
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _planned!.templateId == null
-                        ? '沿用最近一次训练'
-                        : '本次：${_planned!.name}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text('${_planned!.exerciseIds.length} 个动作'),
-                  TextButton(
-                    onPressed: _starting ? null : _pickPlan,
-                    child: const Text('换一个计划'),
-                  ),
-                  TextButton(
-                    onPressed: () => context.push('/plans').then((_) {
-                      if (mounted) _loadPlan();
-                    }),
-                    child: const Text('管理训练计划'),
-                  ),
-                ],
+          const SizedBox(height: 6),
+          Text(
+            parent != null && parent.days.isEmpty
+                ? '尚未配置训练日'
+                : planned?.dayName ?? '按自己的节奏开始',
+            style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          Text(
+            parent != null && parent.days.isEmpty
+                ? '进入管理计划添加训练日，或切换到自由训练'
+                : planned == null
+                ? '正在载入…'
+                : planned.exerciseIds.isEmpty
+                ? '本次没有动作，可在训练中添加'
+                : planned.exerciseIds
+                      .map((id) => _exerciseNames[id] ?? '动作')
+                      .join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: appColors(context).textSecondary),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 4,
+            children: [
+              TextButton(
+                onPressed: _starting ? null : _pickPlan,
+                child: const Text('切换计划'),
               ),
-            ),
-          const SizedBox(height: 16),
-
-          PrimaryButton(
-            label: c.session != null ? '开始新训练' : '开始训练',
-            icon: Icons.play_arrow_rounded,
-            onPressed: _starting ? null : _startNew,
+              TextButton(
+                onPressed: _starting || parent == null || parent.days.isEmpty
+                    ? null
+                    : _pickDay,
+                child: const Text('选择训练日'),
+              ),
+              TextButton(
+                onPressed: _starting ? null : _manage,
+                child: const Text('管理计划'),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _measureLayout();
+    final c = context.watch<ActiveSessionController>();
+    final hasActive = c.session != null;
+    final canStart =
+        _planned != null && (_planned!.freeTraining || _planned!.hasUsableDay);
+    final button = PrimaryButton(
+      key: const ValueKey('home-primary-action'),
+      label: hasActive ? '继续训练' : '开始训练',
+      icon: Icons.play_arrow_rounded,
+      onPressed: _starting || (!hasActive && (_planLoading || !canStart))
+          ? null
+          : hasActive
+          ? _continue
+          : _startNew,
+    );
+    final details = Column(
+      key: _detailsKey,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
+        Text(
+          hasActive ? _describe(c) : _planned?.dayName ?? '今天也为自己留一点时间',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: appColors(context).textSecondary),
+        ),
+        if (hasActive)
+          TextButton(
+            onPressed: _starting || _planLoading || !canStart
+                ? null
+                : _startNew,
+            child: const Text('开始新训练'),
+          ),
+        if (_message != null) Text(_message!, textAlign: TextAlign.center),
+      ],
+    );
+    final title = Text(
+      '训练',
+      style: TextStyle(
+        fontSize: AppFontSize.h1,
+        fontWeight: FontWeight.w700,
+        color: appColors(context).textPrimary,
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+        final contentHeight = constraints.maxHeight - 24;
+        // Measure the actual calendar, text and card. Long names, large text,
+        // landscape and small displays use a reachable scrolling layout.
+        final canCenter =
+            _topSize != null &&
+            _cardSize != null &&
+            _detailsSize != null &&
+            _topSize!.height + 12 <= contentHeight / 2 - 28 &&
+            _cardSize!.height + 12 <=
+                contentHeight / 2 - 28 - _detailsSize!.height;
+        final top = Column(
+          key: _topKey,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            title,
+            const SizedBox(height: 6),
+            _calendar(compact: scale <= 1.15),
+          ],
+        );
+        final card = SizedBox(key: _cardKey, child: _planCard());
+        return Padding(
+          key: const ValueKey('training-content'),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.screenH,
+            12,
+            AppSpacing.screenH,
+            12,
+          ),
+          child: canCenter
+              ? Stack(
+                  children: [
+                    Positioned(top: 0, left: 0, right: 0, child: top),
+                    // Button itself is centered, independent of the text below it.
+                    Positioned(
+                      top: (constraints.maxHeight - 24) / 2 - 28,
+                      left: 0,
+                      right: 0,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [button, details],
+                      ),
+                    ),
+                    Positioned(bottom: 0, left: 0, right: 0, child: card),
+                  ],
+                )
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      top,
+                      const SizedBox(height: 28),
+                      button,
+                      details,
+                      const SizedBox(height: 28),
+                      card,
+                    ],
+                  ),
+                ),
+        );
+      },
     );
   }
 }

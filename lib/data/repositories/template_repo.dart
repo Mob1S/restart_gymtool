@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../domain/plans.dart';
 import '../../domain/backup_codec.dart';
 import '../db/sql_executor.dart';
+import '../db/training_v6_migration.dart';
 import '../ids.dart';
 import 'backup_repo.dart';
 
@@ -55,8 +56,9 @@ Future<TemplateDetail?> readTemplate(SqlExecutor tx, String id) async {
 
 Future<TemplateDetail> saveTemplate(
   SqlExecutor exec,
-  TemplateDraft draft,
-) => exec.transaction((tx) async {
+  TemplateDraft draft, {
+  String? planId,
+}) => exec.transaction((tx) async {
   final name = draft.name.trim();
   if (name.isEmpty) throw const PlanValidationException('请输入计划名称');
   if (draft.exerciseIds.length > 100000) {
@@ -75,28 +77,66 @@ Future<TemplateDetail> saveTemplate(
     throw const PlanValidationException('动作已不存在，请重新选择');
   }
   final id = draft.id ?? newId();
+  final parent =
+      planId ??
+      (existing == null
+          ? null
+          : (await tx.first<Map<String, Object?>>(
+                  'SELECT plan_id FROM split_template WHERE id=?',
+                  [id],
+                ))?['plan_id']
+                as String?) ??
+      await ensureLegacyTrainingPlan(tx);
+  if (await tx.first<Map<String, Object?>>(
+        'SELECT id FROM training_plan WHERE id=?',
+        [parent],
+      ) ==
+      null) {
+    throw const PlanValidationException('训练计划已不存在，请重新选择');
+  }
   if (existing == null) {
     final max = await tx.first<Map<String, Object?>>(
-      'SELECT MAX(position) AS p FROM split_template',
+      'SELECT MAX(position) AS p FROM split_template WHERE plan_id=?',
+      [parent],
     );
     await tx.run(
-      'INSERT INTO split_template(id,name,position,created_at) VALUES(?,?,?,?)',
+      'INSERT INTO split_template(id,name,position,created_at,plan_id) VALUES(?,?,?,?,?)',
       [
         id,
         name,
         ((max?['p'] as int?) ?? -1) + 1,
         DateTime.now().millisecondsSinceEpoch,
+        parent,
       ],
     );
   } else {
-    await tx.run('UPDATE split_template SET name=? WHERE id=?', [name, id]);
-    await tx.run('DELETE FROM template_exercise WHERE template_id=?', [id]);
+    await tx.run('UPDATE split_template SET name=?,plan_id=? WHERE id=?', [
+      name,
+      parent,
+      id,
+    ]);
+  }
+  final queues = <String, List<String>>{};
+  for (final item in existing?.exercises ?? <TemplateItem>[]) {
+    queues.putIfAbsent(item.entry.exerciseId, () => []).add(item.entry.id);
   }
   for (var i = 0; i < draft.exerciseIds.length; i++) {
-    await tx.run(
-      'INSERT INTO template_exercise(id,template_id,exercise_id,position) VALUES(?,?,?,?)',
-      [newId(), id, draft.exerciseIds[i], i],
-    );
+    final exerciseId = draft.exerciseIds[i];
+    final queue = queues[exerciseId];
+    if (queue != null && queue.isNotEmpty) {
+      await tx.run('UPDATE template_exercise SET position=? WHERE id=?', [
+        i,
+        queue.removeAt(0),
+      ]);
+    } else {
+      await tx.run(
+        'INSERT INTO template_exercise(id,template_id,exercise_id,position) VALUES(?,?,?,?)',
+        [newId(), id, exerciseId, i],
+      );
+    }
+  }
+  for (final unused in queues.values.expand((ids) => ids)) {
+    await tx.run('DELETE FROM template_exercise WHERE id=?', [unused]);
   }
   encodeBackup(await readBackupSnapshot(tx, exportedAt: 0));
   return (await readTemplate(tx, id))!;

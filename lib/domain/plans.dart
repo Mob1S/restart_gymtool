@@ -61,16 +61,25 @@ class TemplateDraft {
 }
 
 class PlannedWorkout {
+  final String? planId;
+  final String? planName;
+  final String? dayName;
   final String? templateId;
   final String? name;
   final List<String> exerciseIds;
   final String selectionToken;
   PlannedWorkout({
+    this.planId,
+    this.planName,
+    this.dayName,
     this.templateId,
     this.name,
     required List<String> exerciseIds,
     required this.selectionToken,
   }) : exerciseIds = List.unmodifiable(exerciseIds);
+
+  bool get hasUsableDay => templateId != null;
+  bool get freeTraining => planId == null;
 }
 
 class TemplateDeletePreview {

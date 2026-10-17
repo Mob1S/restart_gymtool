@@ -4,6 +4,7 @@ import '../../domain/backup_codec.dart';
 import '../../domain/import_records.dart';
 import '../../domain/import_preview.dart';
 import '../../domain/types.dart';
+import '../../domain/weight_value.dart';
 import '../db/sql_executor.dart';
 import '../ids.dart';
 import 'backup_repo.dart';
@@ -45,6 +46,12 @@ Future<ImportCatalog> loadImportCatalog(SqlExecutor exec) =>
                 ImportedSet(
                   weight: (s['weight'] as num).toDouble(),
                   reps: s['reps'] as int,
+                  recordedWeight: s['sourceWeight'] == null
+                      ? null
+                      : EquipmentWeight(
+                          DecimalReading.parse(s['sourceWeight'] as String),
+                          WeightUnit.values.byName(s['sourceUnit'] as String),
+                        ),
                 ),
               );
         }
@@ -82,8 +89,12 @@ Future<ImportCatalog> loadImportCatalog(SqlExecutor exec) =>
 
 Future<ImportResult> importWorkouts(
   SqlExecutor exec,
-  ConfirmedImport batch,
-) async {
+  ConfirmedImport batch, {
+  String origin = 'csv',
+}) async {
+  if (origin != 'csv' && origin != 'manual') {
+    throw const ImportValidationException('导入来源无效');
+  }
   validateImportedWorkouts(batch.workouts);
   return exec.transaction((tx) async {
     final snapshot = await readBackupSnapshot(tx, exportedAt: 0);
@@ -102,8 +113,8 @@ Future<ImportResult> importWorkouts(
       final sessionId = newId();
       ids.add(sessionId);
       await tx.run(
-        'INSERT INTO session (id,name,started_at,finished_at,note,template_id) VALUES (?,?,?,?,?,NULL)',
-        [sessionId, w.name, w.startedAt, w.finishedAt, w.note],
+        'INSERT INTO session (id,name,started_at,finished_at,note,template_id,origin) VALUES (?,?,?,?,?,NULL,?)',
+        [sessionId, w.name, w.startedAt, w.finishedAt, w.note, origin],
       );
       // Merge blocks of the same canonical name without discarding equal sets.
       final combined = <String, (String, List<ImportedSet>)>{};
@@ -145,8 +156,17 @@ Future<ImportResult> importWorkouts(
         var setPosition = 0;
         for (final set in entry.value.$2) {
           await tx.run(
-            'INSERT INTO set_entry (id,session_exercise_id,position,weight,reps,is_completed,rest_seconds,rest_started_at,completed_at) VALUES (?,?,?,?,?,1,NULL,NULL,?)',
-            [newId(), seId, setPosition++, set.weight, set.reps, w.finishedAt],
+            'INSERT INTO set_entry (id,session_exercise_id,position,weight,reps,is_completed,rest_seconds,rest_started_at,completed_at,source_weight,source_unit) VALUES (?,?,?,?,?,1,NULL,NULL,?,?,?)',
+            [
+              newId(),
+              seId,
+              setPosition++,
+              set.weight,
+              set.reps,
+              w.finishedAt,
+              set.equipmentWeight.amount.text,
+              set.equipmentWeight.unit.name,
+            ],
           );
           sets++;
         }

@@ -11,9 +11,12 @@ import '../data/repositories/workout_edit_repo.dart';
 import '../data/repositories/exercise_replacement_repo.dart';
 import '../domain/session_label.dart';
 import '../domain/types.dart';
+import '../domain/weight_value.dart';
 import '../domain/exercise_visibility.dart';
 import '../domain/plans.dart';
 import '../domain/record_management.dart';
+import '../domain/backup_codec.dart';
+import '../data/repositories/backup_repo.dart';
 import '../data/repositories/workout_plan_repo.dart';
 import '../data/repositories/record_management_repo.dart';
 
@@ -97,13 +100,17 @@ class ActiveSessionController extends ChangeNotifier {
   bool _disposed = false;
   int _generation = 0;
   String? _writeMessage;
-  final Map<String, double> _stagedWeights = {};
+  final Map<String, EquipmentWeight> _stagedWeights = {};
   Future<WorkoutWriteResult>? _flushing;
   bool get writing => _writing || _starting || _removing;
   String? get writeMessage => _writeMessage;
   bool get savingWeight => _flushing != null;
   bool get hasPendingWeight => _stagedWeights.isNotEmpty;
-  double? stagedWeight(String id) => _stagedWeights[id];
+  double? stagedWeight(String id) => _stagedWeights[id]?.kilograms;
+  EquipmentWeight? stagedReading(String id) => _stagedWeights[id];
+
+  bool _sameReading(EquipmentWeight? a, EquipmentWeight b) =>
+      a?.unit == b.unit && a?.amount.text == b.amount.text;
 
   void _notify() {
     if (!_disposed) notifyListeners();
@@ -158,10 +165,14 @@ class ActiveSessionController extends ChangeNotifier {
   }
 
   void stagePendingWeight(String pendingSetId, double weight) {
+    if (!weight.isFinite || weight < 0) return;
+    stagePendingReading(pendingSetId, EquipmentWeight.kg(weight));
+  }
+
+  void stagePendingReading(String pendingSetId, EquipmentWeight reading) {
     if (_disposed ||
         (writing && _flushing == null) ||
-        !weight.isFinite ||
-        weight < 0) {
+        !reading.kilograms.isFinite) {
       return;
     }
     if (!exercises.any(
@@ -169,15 +180,15 @@ class ActiveSessionController extends ChangeNotifier {
     )) {
       return;
     }
-    if (_stagedWeights[pendingSetId] == weight) return;
+    if (_sameReading(_stagedWeights[pendingSetId], reading)) return;
     final pending = exercises
         .expand((e) => e.sets)
         .firstWhere((s) => s.id == pendingSetId);
-    if (_flushing == null && pending.weight == weight) {
+    if (_flushing == null && _sameReading(pending.equipmentWeight, reading)) {
       if (_stagedWeights.remove(pendingSetId) != null) _notify();
       return;
     }
-    _stagedWeights[pendingSetId] = weight;
+    _stagedWeights[pendingSetId] = reading;
     _notify();
   }
 
@@ -197,10 +208,11 @@ class ActiveSessionController extends ChangeNotifier {
           _exec,
           sessionId: sid,
           pendingSetId: item.key,
-          weight: item.value,
+          weight: item.value.kilograms,
+          reading: item.value,
         );
         if (generation != _generation) return;
-        if (_stagedWeights[item.key] == item.value) {
+        if (_sameReading(_stagedWeights[item.key], item.value)) {
           _stagedWeights.remove(item.key);
         }
       }
@@ -238,14 +250,21 @@ class ActiveSessionController extends ChangeNotifier {
   Future<WorkoutWriteResult> editCompletedSet(
     CompletedSetEdit edit,
     double weight,
-    int reps,
-  ) async {
+    int reps, {
+    EquipmentWeight? reading,
+  }) async {
     if (session?.id != edit.sessionId || session?.finishedAt != null) {
       return WorkoutWriteResult.conflict;
     }
     if (!await _flushReady()) return WorkoutWriteResult.failed;
     return _write(
-      () => updateCompletedSet(_exec, edit, weight: weight, reps: reps),
+      () => updateCompletedSet(
+        _exec,
+        edit,
+        weight: weight,
+        reps: reps,
+        reading: reading,
+      ),
     );
   }
 
@@ -373,6 +392,9 @@ class ActiveSessionController extends ChangeNotifier {
   /// 分化计划的轮转留到后续 Phase，但**调用顺序现在就遵守**（见下）。
   Future<StartResult> startNew({
     String? name,
+    String? planId,
+    String? preferredDayId,
+    bool freeTraining = false,
     String? preferredTemplateId,
     String? selectionToken,
   }) async {
@@ -395,8 +417,14 @@ class ActiveSessionController extends ChangeNotifier {
           if (await getActiveSession(tx) != null) return null;
           final plan = await readPlannedWorkout(
             tx,
+            planId: planId,
+            preferredDayId: preferredDayId,
+            freeTraining: freeTraining,
             preferredTemplateId: preferredTemplateId,
           );
+          if (plan.planId != null && !plan.hasUsableDay) {
+            throw const PlanValidationException('请先添加训练日');
+          }
           if (selectionToken != null && selectionToken != plan.selectionToken) {
             throw const PlanValidationException('计划已变化');
           }
@@ -404,10 +432,15 @@ class ActiveSessionController extends ChangeNotifier {
             tx,
             name: name ?? plan.name,
             templateId: plan.templateId,
+            planId: plan.planId,
+            planNameSnapshot: plan.planName,
+            dayNameSnapshot: plan.dayName,
+            origin: 'live',
           );
           for (final exerciseId in plan.exerciseIds) {
             await addExerciseWithFirstSet(tx, s.id, exerciseId);
           }
+          encodeBackup(await readBackupSnapshot(tx, exportedAt: _now()));
           return s;
         });
       } on PlanValidationException {
@@ -479,7 +512,13 @@ class ActiveSessionController extends ChangeNotifier {
   /// 以下情况**静默返回**（都不报错）：训练已结束、currentIndex 越界、
   /// 该动作已无未完成的组（重复点击）。
   Future<void> completeCurrentSet(double weight, int reps) async {
-    if (writing) return;
+    if (!weight.isFinite || weight < 0) return;
+    await completeCurrentReading(EquipmentWeight.kg(weight), reps);
+  }
+
+  Future<void> completeCurrentReading(EquipmentWeight reading, int reps) async {
+    if (writing && !savingWeight) return;
+    if (!await _flushReady() || writing) return;
     final current = session;
     final pending = currentExercise?.sets
         .where((s) => !s.isCompleted)
@@ -492,7 +531,8 @@ class ActiveSessionController extends ChangeNotifier {
         _exec,
         sessionId: current.id,
         pendingSetId: pending.id,
-        weight: weight,
+        weight: reading.kilograms,
+        reading: reading,
         reps: reps,
         now: _now(),
       ),
@@ -717,6 +757,26 @@ class ActiveSessionController extends ChangeNotifier {
       startedAt: s.startedAt,
       finishedAt: s.finishedAt,
       note: s.note,
+      planId: s.planId,
+      planNameSnapshot: s.planNameSnapshot,
+      dayNameSnapshot: s.dayNameSnapshot,
+      origin: s.origin,
+    );
+    _notify();
+  }
+
+  void detachPlan(String planId) {
+    final s = session;
+    if (s == null || s.planId != planId) return;
+    session = WorkoutSession(
+      id: s.id,
+      name: s.name,
+      startedAt: s.startedAt,
+      finishedAt: s.finishedAt,
+      note: s.note,
+      planNameSnapshot: s.planNameSnapshot,
+      dayNameSnapshot: s.dayNameSnapshot,
+      origin: s.origin,
     );
     _notify();
   }

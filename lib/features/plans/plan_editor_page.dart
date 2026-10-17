@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../data/repositories/executor_access.dart';
-import '../../data/repositories/exercise_repo.dart';
 import '../../state/plan_controller.dart';
-import '../workout/exercise_picker.dart';
+import 'day_editor_sheet.dart';
 
 class PlanEditorPage extends StatefulWidget {
   final String? id;
@@ -15,25 +13,14 @@ class PlanEditorPage extends StatefulWidget {
 
 class _PlanEditorPageState extends State<PlanEditorPage> {
   final _name = TextEditingController();
-  Map<String, String> _names = {};
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final c = context.read<PlanController>();
-      final exec = context.read<SqlExecutor>();
       await c.loadDraft(widget.id);
-      final exercises = await listExercises(exec, includeArchived: true);
-      if (mounted) {
-        setState(() {
-          _names = {
-            for (final e in exercises)
-              e.id: '${e.name}${e.isArchived ? '（归档）' : ''}',
-          };
-          _name.text = c.draft?.name ?? '';
-        });
-      }
+      if (mounted) _name.text = c.draft?.name ?? '';
     });
   }
 
@@ -104,67 +91,118 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                 enabled: !c.busy,
                 decoration: const InputDecoration(labelText: '计划名称'),
               ),
-              if (draft.exerciseIds.isEmpty)
+              const SizedBox(height: 24),
+              Text(
+                '训练日 · ${draft.days.length} 天',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              const Text('按这里的顺序轮换，训练日数量和名称可自由设置。'),
+              if (draft.days.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text('空计划也可以保存，开训后可再添加动作。'),
+                  child: Text('还没有训练日。可以先保存计划，稍后配置。'),
                 ),
-              for (var i = 0; i < draft.exerciseIds.length; i++)
+              for (var i = 0; i < draft.days.length; i++)
                 Card(
+                  key: ValueKey(c.dayKeys[i]),
                   child: Column(
                     children: [
                       ListTile(
-                        title: Text(
-                          '${i + 1}. ${_names[draft.exerciseIds[i]] ?? '动作'}',
+                        title: Text('${i + 1}. ${draft.days[i].name}'),
+                        subtitle: Text(
+                          '${draft.days[i].exerciseIds.length} 个动作',
                         ),
+                        onTap: c.busy
+                            ? null
+                            : () async {
+                                final day = await showDayEditorSheet(
+                                  context,
+                                  day: draft.days[i],
+                                );
+                                if (day != null && mounted) c.updateDay(i, day);
+                              },
                       ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           IconButton(
-                            tooltip: '上移动作',
+                            tooltip: '编辑训练日',
+                            onPressed: c.busy
+                                ? null
+                                : () async {
+                                    final day = await showDayEditorSheet(
+                                      context,
+                                      day: draft.days[i],
+                                    );
+                                    if (day != null && mounted) {
+                                      c.updateDay(i, day);
+                                    }
+                                  },
+                            icon: const Icon(Icons.edit_outlined),
+                          ),
+                          IconButton(
+                            tooltip: '上移训练日',
                             onPressed: c.busy || i == 0
                                 ? null
-                                : () => c.moveDraftItem(i, -1),
+                                : () => c.moveDay(i, -1),
                             icon: const Icon(Icons.arrow_upward),
                           ),
                           IconButton(
-                            tooltip: '下移动作',
-                            onPressed:
-                                c.busy || i == draft.exerciseIds.length - 1
+                            tooltip: '下移训练日',
+                            onPressed: c.busy || i == draft.days.length - 1
                                 ? null
-                                : () => c.moveDraftItem(i, 1),
+                                : () => c.moveDay(i, 1),
                             icon: const Icon(Icons.arrow_downward),
                           ),
                           IconButton(
-                            tooltip: '移除计划动作',
+                            tooltip: '删除训练日',
                             onPressed: c.busy
                                 ? null
-                                : () => c.removeDraftItem(i),
-                            icon: const Icon(Icons.close),
+                                : () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: Text(
+                                          '删除训练日「${draft.days[i].name}」？',
+                                        ),
+                                        content: const Text(
+                                          '保存计划后移除这个训练日，已有训练记录会保留。',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(context, false),
+                                            child: const Text('取消'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(context, true),
+                                            child: const Text('删除训练日'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm == true && mounted) {
+                                      c.removeDay(i);
+                                    }
+                                  },
+                            icon: const Icon(Icons.delete_outline),
                           ),
                         ],
                       ),
                     ],
                   ),
                 ),
-              OutlinedButton(
+              OutlinedButton.icon(
                 onPressed: c.busy
                     ? null
                     : () async {
-                        final e = await showExerciseMultiPicker(context);
-                        if (e != null && mounted) {
-                          setState(() {
-                            for (final exercise in e) {
-                              _names[exercise.id] = exercise.name;
-                            }
-                          });
-                          c.addExercises(
-                            e.map((exercise) => exercise.id).toList(),
-                          );
-                        }
+                        final day = await showDayEditorSheet(context);
+                        if (day != null && mounted) c.addDay(day);
                       },
-                child: const Text('添加动作'),
+                icon: const Icon(Icons.add),
+                label: const Text('添加训练日'),
               ),
             ],
           ],

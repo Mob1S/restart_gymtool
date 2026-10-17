@@ -30,6 +30,9 @@ class ImportController extends ChangeNotifier {
   String? message;
   String? fileName;
   String? _csv;
+  String _origin = 'csv';
+  ImportResult? lastResult;
+  int? lastImportedStartedAt;
   WeightUnit unit = WeightUnit.kg;
   void _notify() {
     if (!_disposed) notifyListeners();
@@ -70,6 +73,7 @@ class ImportController extends ChangeNotifier {
 
   Future<bool> selectCsv({WeightUnit defaultUnit = WeightUnit.kg}) {
     if (busy) return Future.value(false);
+    _origin = 'csv';
     _csv = null;
     fileName = null;
     unit = defaultUnit;
@@ -96,6 +100,8 @@ class ImportController extends ChangeNotifier {
     List<ImportedWorkout> workouts, {
     Map<String, String?> matches = const {},
   }) {
+    if (busy) return Future.value(false);
+    _origin = 'manual';
     _csv = null;
     fileName = null;
     return _prepare(() async {
@@ -156,7 +162,7 @@ class ImportController extends ChangeNotifier {
     try {
       ImportResult result;
       try {
-        result = await importWorkouts(exec, batch);
+        result = await importWorkouts(exec, batch, origin: _origin);
       } catch (e) {
         draft = null;
         selection = null;
@@ -165,6 +171,10 @@ class ImportController extends ChangeNotifier {
       }
       draft = null;
       selection = null;
+      lastResult = result;
+      lastImportedStartedAt = batch.workouts.isEmpty
+          ? null
+          : batch.workouts.first.startedAt;
       try {
         await onCommitted(result);
       } catch (_) {

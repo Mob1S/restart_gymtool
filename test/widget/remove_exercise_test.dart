@@ -11,7 +11,9 @@ import 'package:gym_tracker/features/workout/record_page.dart';
 import 'package:gym_tracker/ui/theme.dart';
 import 'package:gym_tracker/ui/tokens.dart';
 import 'package:provider/provider.dart';
-import 'package:gym_tracker/features/workout/drag_number.dart';
+import 'package:gym_tracker/features/workout/workout_value_input.dart';
+import 'package:gym_tracker/domain/training_plans.dart';
+import 'package:gym_tracker/data/repositories/training_plan_repo.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
@@ -109,25 +111,42 @@ void main() {
             [id, id, weight],
           );
         }
-        await db.run(
-          "INSERT INTO split_template(id,name,position,created_at) VALUES('plan','AB',0,0)",
-        );
-        await db.run(
-          "INSERT INTO template_exercise(id,template_id,exercise_id,position) VALUES('pa','plan','a',0),('pb','plan','b',1)",
+        await saveTrainingPlan(
+          db,
+          TrainingPlanDraft(
+            name: 'AB',
+            days: [
+              TrainingDayDraft(name: 'AB', exerciseIds: ['a', 'b']),
+            ],
+          ),
         );
       });
       await t.pumpWidget(AppBootstrap(openDatabase: () async => db));
       await settle(t);
       await t.tap(find.text('开始训练'));
       await settle(t);
-      expect(t.widget<DragNumber>(find.byType(DragNumber)).value, 50);
+      expect(
+        t
+            .widget<WorkoutValueInput>(find.byType(WorkoutValueInput))
+            .weight
+            .amount
+            .asDouble,
+        50,
+      );
       await t.tap(find.text('✓ 完成这组'));
       await settle(t);
       await t.tap(find.byTooltip('移除当前动作'));
       await settle(t);
       await t.tap(find.text('删掉这 1 组'));
       await settle(t);
-      expect(t.widget<DragNumber>(find.byType(DragNumber)).value, 20);
+      expect(
+        t
+            .widget<WorkoutValueInput>(find.byType(WorkoutValueInput))
+            .weight
+            .amount
+            .asDouble,
+        20,
+      );
       expect(find.byTooltip('移除当前动作'), findsNothing);
       await t.tap(find.text('✓ 完成这组'));
       await settle(t);

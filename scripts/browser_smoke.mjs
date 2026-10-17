@@ -84,7 +84,9 @@ async function evaluate(expression) {
 }
 const semanticsExpression = `Array.from(document.querySelectorAll('flt-semantics')).map(e => {
   const r = e.getBoundingClientRect();
-  return {text: e.getAttribute('aria-label') || Array.from(e.querySelectorAll('input,textarea')).map(i=>i.getAttribute('aria-label') || i.placeholder || '').filter(Boolean).join('\\n') || e.innerText || '', role: e.getAttribute('role'),
+  const slider = e.querySelector('input[type=range]');
+  const editable = Array.from(e.querySelectorAll('input:not([type=range]),textarea')).find(i=>i.closest('flt-semantics')===e);
+  return {id:e.id, text: e.getAttribute('aria-label') || Array.from(e.querySelectorAll('input,textarea')).map(i=>i.getAttribute('aria-label') || i.placeholder || '').filter(Boolean).join('\\n') || e.innerText || '', role: e.getAttribute('role') || slider?.getAttribute('role') || (editable ? 'textbox' : null), value: e.getAttribute('aria-valuetext') || slider?.getAttribute('aria-valuetext') || '', disabled: e.getAttribute('aria-disabled') === 'true',
     x: r.x, y: r.y, width: r.width, height: r.height};
 }).filter(e => e.width && e.height)`;
 async function semantics() {
@@ -95,18 +97,26 @@ async function semantics() {
   })()`);
   return evaluate(semanticsExpression);
 }
-async function has(text) { return (await semantics()).some(e => e.text.includes(text)); }
+async function has(text) { return (await semantics()).some(e => e.text.includes(text) || e.value?.includes(text)); }
 async function expectText(text) { await until(() => has(text), `text: ${text}`); }
 async function clickAt(x, y) {
+  await send('Input.dispatchMouseEvent', {type:'mouseMoved',x,y});
+  await delay(50);
   for (const type of ['mousePressed', 'mouseReleased']) {
-    await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons:type==='mousePressed'?1:0, clickCount: 1 });
   }
   await delay(400);
 }
 async function clickText(text, exact = false) {
+  let previous;
   const element = await until(async () => {
-    const matches = (await semantics()).filter(e => (exact ? e.text === text : e.text.includes(text)) && (text.startsWith('收藏 ') || !e.text.startsWith('收藏 ')));
-    return matches.sort((a, b) => a.width * a.height - b.width * b.height)[0];
+    const matches = (await semantics()).filter(e => !e.disabled && (exact ? e.text === text || e.value === text : e.text.includes(text) || e.value?.includes(text)) && (text.startsWith('收藏 ') || !e.text.startsWith('收藏 ')));
+    const next = matches.sort((a, b) => a.width * a.height - b.width * b.height)[0];
+    const stable = next && previous && next.x === previous.x && next.y === previous.y && next.width === previous.width && next.height === previous.height;
+    previous = next;
+    if(!stable) return null;
+    const clear=await evaluate(`(()=>{const target=document.getElementById(${JSON.stringify(next.id)});const hit=document.elementFromPoint(${next.x+next.width/2},${next.y+next.height/2});return !!target&&!!hit&&(target.contains(hit)||hit.contains(target))})()`);
+    return clear ? next : null;
   }, `clickable text: ${text}`);
   await clickAt(element.x + element.width / 2, element.y + element.height / 2);
 }
@@ -232,13 +242,15 @@ try {
     await clickText('开始训练');
     // The next workout copies the previous exercise and its last set values.
     await expectText('20 kg');
-    const weight = (await semantics()).find(e => e.text === '20 kg');
-    assert(weight, 'Weight control must show 20 kg before editing.');
-    const plus = (await semantics()).filter(e => e.role === 'button' && e.text === '增加' &&
-      e.x > weight.x + weight.width / 2 && e.y >= weight.y + weight.height &&
-      e.y < weight.y + weight.height + 100).sort((a, b) => a.y - b.y)[0];
-    assert(plus, 'Weight increment control must be visible.');
-    for (let i = 0; i < 12; i++) await clickAt(plus.x + plus.width / 2, plus.y + plus.height / 2);
+    const weight = (await semantics()).find(e => e.role === 'slider' && e.text === '重量');
+    assert(weight, 'Weight slider must be visible.');
+    const x = weight.x + weight.width / 2, y = weight.y + weight.height / 2;
+    await send('Input.dispatchTouchEvent', { type:'touchStart', touchPoints:[{x,y}] });
+    for(let dy=16;dy<=192;dy+=16) {
+      await send('Input.dispatchTouchEvent', {type:'touchMove',touchPoints:[{x,y:y-dy}]});
+      await delay(25);
+    }
+    await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     await expectText('50 kg');
     await screenshot('12-record-50kg');
     for (let i = 1; i <= 4; i++) {

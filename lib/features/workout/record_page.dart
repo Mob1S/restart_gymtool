@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../domain/types.dart';
-import '../../domain/format.dart';
+import '../../domain/weight_value.dart';
 import '../../domain/workout_edit.dart';
 import '../../state/exercise_preferences_controller.dart';
 import 'completed_sets_sheet.dart';
@@ -18,10 +18,9 @@ import '../../ui/tokens.dart';
 import '../../ui/widgets/empty_state.dart';
 import '../../ui/widgets/fill_or_scroll.dart';
 import '../../ui/widgets/primary_button.dart';
-import 'drag_number.dart';
+import 'workout_value_input.dart';
 import 'exercise_picker.dart';
 import 'exercise_strip.dart';
-import 'number_stepper.dart';
 import 'rest_view.dart';
 import 'remove_exercise_dialog.dart';
 import '../history/delete_session_dialog.dart';
@@ -42,9 +41,13 @@ class RecordPage extends StatefulWidget {
 class _RecordPageState extends State<RecordPage> {
   /// 用户此刻在编辑的数值。与库里那条占位组的值分开保存 ——
   /// 拖动过程中不该每一帧都写库，**只有点「完成这组」才落盘**。
-  double? _weight;
+  EquipmentWeight? _weight;
   int? _reps;
   bool _ready = false;
+  bool _gestureActive = false;
+  bool _settingsOpen = false;
+
+  bool get _interactionLocked => _gestureActive || _settingsOpen;
 
   @override
   void initState() {
@@ -85,7 +88,7 @@ class _RecordPageState extends State<RecordPage> {
       return;
     }
     setState(() {
-      _weight = pending.weight;
+      _weight = pending.equipmentWeight;
       _reps = pending.reps;
     });
   }
@@ -106,8 +109,8 @@ class _RecordPageState extends State<RecordPage> {
     if (weight == null || reps == null) return;
 
     // 一次轻微震动，**让用户不用盯着屏幕确认**（规格 §6.1）
-    if (c.writing) return;
-    await c.completeCurrentSet(weight, reps);
+    if (c.writing || _interactionLocked) return;
+    await c.completeCurrentReading(weight, reps);
     if (c.writeMessage == null &&
         c.currentExercise?.sets.any((s) => s.restStartedAt != null) == true) {
       await HapticFeedback.lightImpact();
@@ -116,11 +119,13 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   Future<void> _beginNextSet(ActiveSessionController c) async {
+    if (_interactionLocked) return;
     await c.beginNextSet();
     _syncFromPending(c);
   }
 
   Future<void> _addExercise(ActiveSessionController c) async {
+    if (_interactionLocked) return;
     final flushed = await c.flushPendingWeight();
     if (!mounted ||
         (flushed != WorkoutWriteResult.saved &&
@@ -139,12 +144,14 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   Future<void> _endWorkout(ActiveSessionController c) async {
+    if (_interactionLocked) return;
     final id = await c.endWorkout();
     if (!mounted) return;
     if (id != null) context.go('/summary/$id');
   }
 
   Future<void> _remove(ActiveSessionController c) async {
+    if (_interactionLocked) return;
     final id = c.currentSessionExerciseId;
     if (id == null) return;
     try {
@@ -162,6 +169,47 @@ class _RecordPageState extends State<RecordPage> {
     }
   }
 
+  Future<void> _openSettings(ActiveSessionController c) async {
+    if (_interactionLocked || c.writing) return;
+    final prefs = context.read<ExercisePreferencesController?>();
+    final active = c.currentExercise;
+    final pending = _pendingOf(c);
+    if (prefs == null || active == null) return;
+    final resting = active.sets.any((set) => set.restStartedAt != null);
+    final reading = pending == null
+        ? null
+        : c.stagedReading(pending.id) ??
+              (resting
+                  ? pending.equipmentWeight
+                  : _weight ?? pending.equipmentWeight);
+    final reps = _reps;
+    setState(() => _settingsOpen = true);
+    try {
+      final flushed = await c.flushPendingWeight();
+      if (!mounted ||
+          (flushed != WorkoutWriteResult.saved &&
+              flushed != WorkoutWriteResult.unchanged)) {
+        return;
+      }
+      final result = await showExerciseSettingsSheet(
+        context,
+        prefs,
+        active.sessionExercise.exerciseId,
+        active.exerciseName,
+        sessionId: pending == null ? null : widget.sessionId,
+        pendingSetId: pending?.id,
+        pendingReading: reading,
+      );
+      if (result == WorkoutWriteResult.saved && mounted) {
+        await c.resume();
+        _syncFromPending(c);
+        if (mounted) setState(() => _reps = reps);
+      }
+    } finally {
+      if (mounted) setState(() => _settingsOpen = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.watch<ActiveSessionController>();
@@ -176,9 +224,9 @@ class _RecordPageState extends State<RecordPage> {
     }
 
     return PopScope(
-      canPop: !c.hasPendingWeight && !c.writing,
+      canPop: !_interactionLocked && !c.hasPendingWeight && !c.writing,
       onPopInvokedWithResult: (didPop, _) async {
-        if (didPop || c.writing) return;
+        if (didPop || c.writing || _interactionLocked) return;
         final result = await c.flushPendingWeight();
         if (mounted &&
             (result == WorkoutWriteResult.saved ||
@@ -196,7 +244,8 @@ class _RecordPageState extends State<RecordPage> {
             if (c.recordingExercises.length > 1)
               IconButton(
                 tooltip: '移除当前动作',
-                onPressed: !_ready || (c.loading || c.writing)
+                onPressed:
+                    !_ready || _interactionLocked || (c.loading || c.writing)
                     ? null
                     : () => _remove(c),
                 icon: const Icon(Icons.playlist_remove),
@@ -206,6 +255,7 @@ class _RecordPageState extends State<RecordPage> {
                 tooltip: '删除这场训练',
                 onPressed:
                     !_ready ||
+                        _interactionLocked ||
                         c.loading ||
                         context.watch<RecordManagementController?>()?.busy ==
                             true
@@ -222,7 +272,8 @@ class _RecordPageState extends State<RecordPage> {
                 icon: const Icon(Icons.delete_outline),
               ),
             TextButton(
-              onPressed: !_ready || (c.loading || c.writing)
+              onPressed:
+                  !_ready || _interactionLocked || (c.loading || c.writing)
                   ? null
                   : () => _endWorkout(c),
               child: const Text('结束训练'),
@@ -237,14 +288,22 @@ class _RecordPageState extends State<RecordPage> {
                 exercises: c.recordingExercises,
                 currentIndex: c.currentIndex,
                 onSelect: (i) async {
-                  if (!_ready || c.loading || (c.writing && !c.savingWeight)) {
+                  if (!_ready ||
+                      _interactionLocked ||
+                      c.loading ||
+                      (c.writing && !c.savingWeight)) {
                     return;
                   }
                   await c.setCurrentIndex(i);
                   _syncFromPending(c);
                 },
                 onAdd: () {
-                  if (_ready && !c.loading && !c.writing) _addExercise(c);
+                  if (_ready &&
+                      !_interactionLocked &&
+                      !c.loading &&
+                      !c.writing) {
+                    _addExercise(c);
+                  }
                 },
               ),
 
@@ -253,7 +312,7 @@ class _RecordPageState extends State<RecordPage> {
                   alignment: WrapAlignment.center,
                   children: [
                     TextButton(
-                      onPressed: c.writing
+                      onPressed: _interactionLocked || c.writing
                           ? null
                           : () => showCompletedSetsSheet(
                               context,
@@ -266,31 +325,13 @@ class _RecordPageState extends State<RecordPage> {
                       ),
                     ),
                     TextButton(
-                      onPressed: c.writing
+                      onPressed: _interactionLocked || c.writing
                           ? null
-                          : () async {
-                              final prefs = context
-                                  .read<ExercisePreferencesController?>();
-                              final active = c.currentExercise!;
-                              final flushed = await c.flushPendingWeight();
-                              if (!context.mounted ||
-                                  prefs == null ||
-                                  (flushed != WorkoutWriteResult.saved &&
-                                      flushed !=
-                                          WorkoutWriteResult.unchanged)) {
-                                return;
-                              }
-                              await showExerciseSettingsSheet(
-                                context,
-                                prefs,
-                                active.sessionExercise.exerciseId,
-                                active.exerciseName,
-                              );
-                            },
+                          : () => _openSettings(c),
                       child: const Text('动作设置'),
                     ),
                     TextButton(
-                      onPressed: c.writing
+                      onPressed: _interactionLocked || c.writing
                           ? null
                           : () async {
                               await showReplaceExerciseSheet(context, c);
@@ -317,7 +358,7 @@ class _RecordPageState extends State<RecordPage> {
                     children: [
                       Text(c.writeMessage!),
                       TextButton(
-                        onPressed: c.writing
+                        onPressed: _interactionLocked || c.writing
                             ? null
                             : () async {
                                 await c.resume();
@@ -355,7 +396,13 @@ class _RecordPageState extends State<RecordPage> {
     final active = c.currentExercise!;
     final prefs = context.watch<ExercisePreferencesController?>();
     final preference = prefs?.preferenceFor(active.sessionExercise.exerciseId);
-    final step = preference?.weightStepKg ?? 2.5;
+    final pendingUnit =
+        (_weight ?? _pendingOf(c)?.equipmentWeight)?.unit ??
+        preference?.weightUnit ??
+        WeightUnit.kg;
+    final step = pendingUnit == WeightUnit.kg
+        ? preference?.kgStep ?? DecimalReading.parse('2.5')
+        : preference?.lbStep ?? DecimalReading.parse('5');
     final note = preference?.equipmentNote ?? '';
     final total = active.sets.length;
     final completed = active.sets.where((s) => s.isCompleted).length;
@@ -368,7 +415,7 @@ class _RecordPageState extends State<RecordPage> {
       return RestView(
         restStartedAt: resting.restStartedAt!,
         nextSetNumber: completed + 1,
-        onBeginNextSet: c.writing && !c.savingWeight
+        onBeginNextSet: _interactionLocked || (c.writing && !c.savingWeight)
             ? null
             : () => _beginNextSet(c),
         exerciseName: active.exerciseName,
@@ -379,11 +426,16 @@ class _RecordPageState extends State<RecordPage> {
               key: ValueKey(_pendingOf(c)!.id),
               controller: c,
               pending: _pendingOf(c)!,
-              step: step,
+              step: step.asDouble,
+              readingStep: step,
+              showKgEquivalent: preference?.showKgEquivalent ?? false,
+              onGestureActiveChanged: (active) {
+                if (mounted) setState(() => _gestureActive = active);
+              },
             ),
-          Text('刚完成 ${formatWeightKg(resting.weight)} kg × ${resting.reps}'),
+          Text('刚完成 ${resting.equipmentWeight.label} × ${resting.reps}'),
           TextButton(
-            onPressed: c.writing
+            onPressed: _interactionLocked || c.writing
                 ? null
                 : () async {
                     try {
@@ -431,7 +483,8 @@ class _RecordPageState extends State<RecordPage> {
     }
 
     final pending = _pendingOf(c);
-    final weight = _weight ?? pending?.weight ?? 20;
+    final weight =
+        _weight ?? pending?.equipmentWeight ?? EquipmentWeight.kg(20);
     final reps = _reps ?? pending?.reps ?? 8;
 
     // 窄屏 / 横屏下这一列会比一屏高（320×480 实测溢出 59px，切掉的正好是
@@ -468,21 +521,31 @@ class _RecordPageState extends State<RecordPage> {
 
           const Spacer(),
 
-          DragNumber(
-            value: weight,
-            step: step,
-            onChanged: (v) => setState(() => _weight = v),
+          WorkoutValueInput(
+            key: ValueKey(pending?.id),
+            weight: weight,
+            reps: reps,
+            step: weight.unit == WeightUnit.kg
+                ? preference?.kgStep ?? DecimalReading.parse('2.5')
+                : preference?.lbStep ?? DecimalReading.parse('5'),
+            enabled: !c.writing && !_settingsOpen,
+            showKgEquivalent: preference?.showKgEquivalent ?? false,
+            onWeightChanged: (value) {
+              if (mounted) setState(() => _weight = value);
+            },
+            onRepsChanged: (value) {
+              if (mounted) setState(() => _reps = value);
+            },
+            onGestureActiveChanged: (active) {
+              if (mounted) setState(() => _gestureActive = active);
+            },
           ),
-
-          const SizedBox(height: AppSpacing.xl),
-          NumberStepper(
-            value: weight,
-            step: step,
-            onChanged: (v) => setState(() => _weight = v),
+          TextButton(
+            onPressed: _interactionLocked || c.writing
+                ? null
+                : () => _openSettings(c),
+            child: Text('幅度 ${step.text} ${weight.unit.name} ▾'),
           ),
-
-          const SizedBox(height: AppSpacing.lg),
-          _repsRow(reps, sc),
 
           const Spacer(),
 
@@ -491,7 +554,7 @@ class _RecordPageState extends State<RecordPage> {
             child: PrimaryButton(
               label: '✓ 完成这组',
               // 没有待完成的组时置灰 —— 那正是「点了没反应」的假死状态
-              onPressed: pending == null || c.writing
+              onPressed: pending == null || _interactionLocked || c.writing
                   ? null
                   : () => _complete(c),
             ),
@@ -515,7 +578,7 @@ class _RecordPageState extends State<RecordPage> {
     if (done.isEmpty) return const SizedBox.shrink();
     final last = done.last;
     return Text(
-      '本场上一组 ${_fmt(last.weight)} kg × ${last.reps}',
+      '本场上一组 ${last.equipmentWeight.label} × ${last.reps}',
       style: TextStyle(
         fontSize: AppFontSize.caption,
         color: sc.textTertiary,
@@ -523,41 +586,6 @@ class _RecordPageState extends State<RecordPage> {
       ),
     );
   }
-
-  Widget _repsRow(int reps, AppColors sc) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          '次数',
-          style: TextStyle(fontSize: AppFontSize.label, color: sc.textTertiary),
-        ),
-        const SizedBox(width: AppSpacing.md),
-        NumberStepper(
-          value: reps.toDouble(),
-          step: 1,
-          max: 100,
-          onChanged: (v) => setState(() => _reps = v.round()),
-        ),
-        const SizedBox(width: AppSpacing.md),
-        SizedBox(
-          width: 48,
-          child: Text(
-            '$reps',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: AppFontSize.h2,
-              fontWeight: FontWeight.w600,
-              color: sc.textPrimary,
-              fontFeatures: tabularNums,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _fmt(double v) => formatWeightKg(v);
 }
 
 /// `Iterable.firstOrNull` —— 取第一个元素，没有元素时返回 null。

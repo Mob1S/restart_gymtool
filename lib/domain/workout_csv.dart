@@ -2,10 +2,11 @@ import 'dart:convert';
 
 import 'csv_records.dart';
 import 'import_records.dart';
+import 'weight_value.dart';
 
-enum CsvSource { strong, hevy, xunji, unknown }
+export 'weight_value.dart' show WeightUnit;
 
-enum WeightUnit { kg, lb }
+enum CsvSource { strong, hevy, xunji, gymTracker, unknown }
 
 class CsvIssue {
   final int line;
@@ -147,6 +148,9 @@ CsvParseResult parseWorkoutCsv(
       .toList();
   if (nonempty.isEmpty) throw const ImportValidationException('CSV 文件为空');
   final header = nonempty.first.fields.map(normalizeExerciseName).toList();
+  if (header.contains('session_id') && header.contains('weight_unit')) {
+    return _parseNativeCsv(nonempty, header);
+  }
   const layouts = {
     CsvSource.strong: [
       'Date',
@@ -216,8 +220,10 @@ CsvParseResult parseWorkoutCsv(
       final weightText = halfWidth(field(2)).trim().toLowerCase();
       var pounds = false;
       double weight;
+      EquipmentWeight reading;
       if (weightText.isEmpty || weightText == 'bw') {
         weight = 0;
+        reading = EquipmentWeight.kg(0);
       } else {
         final m = RegExp(r'^([+]?(?:\d+(?:\.\d*)?|\.\d+))\s*(kg|lbs?|公斤)?$')
             .firstMatch(weightText);
@@ -228,7 +234,11 @@ CsvParseResult parseWorkoutCsv(
         if (source != CsvSource.strong && m[2]?.startsWith('lb') == true) {
           throw const ImportValidationException('磅单位与公斤表头冲突');
         }
-        weight = double.parse(m[1]!) * (pounds ? 0.45359237 : 1);
+        reading = EquipmentWeight(
+          DecimalReading.parse(m[1]!),
+          pounds ? WeightUnit.lb : WeightUnit.kg,
+        );
+        weight = reading.kilograms;
         if (!weight.isFinite) throw const ImportValidationException('重量不是有限数');
       }
       final repsText = halfWidth(field(3));
@@ -249,9 +259,13 @@ CsvParseResult parseWorkoutCsv(
         normalizeExerciseName(name),
         () => (name, <ImportedSet>[]),
       );
-      e.$2.add(ImportedSet(weight: weight, reps: reps));
+      e.$2.add(
+        ImportedSet(weight: weight, reps: reps, recordedWeight: reading),
+      );
     } on ImportValidationException catch (e) {
       skipped.add(CsvIssue(row.line, e.message));
+    } on FormatException catch (e) {
+      skipped.add(CsvIssue(row.line, e.message.toString()));
     }
   }
   final ordered = groups.values.toList()
@@ -289,5 +303,137 @@ CsvParseResult parseWorkoutCsv(
     workouts: workouts,
     skipped: skipped,
     statsByWorkout: stats,
+  );
+}
+
+class _NativeGroup {
+  final String id, title;
+  final int start, end;
+  final List<int> rows = [];
+  final Map<String, (String, List<ImportedSet>)> exercises = {};
+  int pounds = 0;
+  _NativeGroup(this.id, this.title, this.start, this.end);
+}
+
+CsvParseResult _parseNativeCsv(List<CsvRecord> rows, List<String> header) {
+  const requiredColumns = [
+    'session_id',
+    'start_time',
+    'end_time',
+    'title',
+    'exercise_title',
+    'set_index',
+    'weight',
+    'weight_unit',
+    'weight_kg',
+    'reps',
+  ];
+  if (requiredColumns.any((name) => !header.contains(name)) ||
+      header.toSet().length != header.length) {
+    throw const ImportValidationException('本应用 CSV 表头缺少字段或有重复列');
+  }
+  final positions = {
+    for (final name in requiredColumns) name: header.indexOf(name),
+  };
+  final groups = <String, _NativeGroup>{};
+  final skipped = <CsvIssue>[];
+  for (final row in rows.skip(1)) {
+    try {
+      if (row.fields.length != header.length) {
+        throw const ImportValidationException('列数与表头不一致');
+      }
+      String field(String name) => row.fields[positions[name]!].trim();
+      final id = field('session_id');
+      final name = field('exercise_title');
+      if (id.isEmpty || normalizeExerciseName(name).isEmpty) {
+        throw const ImportValidationException('训练标识和动作名称不能为空');
+      }
+      final start = parseImportDate(field('start_time'));
+      final end = parseImportDate(field('end_time'));
+      if (end < start) throw const ImportValidationException('结束早于开始');
+      final title = field('title');
+      final unitText = field('weight_unit').toLowerCase();
+      if (unitText != 'kg' && unitText != 'lb') {
+        throw const ImportValidationException('器械单位须为 kg 或 lb');
+      }
+      final reading = EquipmentWeight(
+        DecimalReading.parse(field('weight')),
+        WeightUnit.values.byName(unitText),
+      );
+      final kg = double.tryParse(field('weight_kg'));
+      final reps = int.tryParse(field('reps'));
+      final position = int.tryParse(field('set_index'));
+      if (kg == null ||
+          !kg.isFinite ||
+          kg < 0 ||
+          reps == null ||
+          reps <= 0 ||
+          position == null ||
+          position <= 0) {
+        throw const ImportValidationException('重量、组序号或次数无效');
+      }
+      final tolerance = kg.abs() * 1e-12 > 1e-9 ? kg.abs() * 1e-12 : 1e-9;
+      if ((reading.kilograms - kg).abs() > tolerance) {
+        throw const ImportValidationException('器械读数与公斤重量不一致');
+      }
+      final previous = groups[id];
+      if (previous != null &&
+          (previous.start != start ||
+              previous.end != end ||
+              previous.title != title)) {
+        throw const ImportValidationException('同场训练的名称或起止时间冲突');
+      }
+      final group = groups.putIfAbsent(
+        id,
+        () => _NativeGroup(id, title, start, end),
+      );
+      group.rows.add(row.line);
+      if (reading.unit == WeightUnit.lb) group.pounds++;
+      group.exercises
+          .putIfAbsent(
+            normalizeExerciseName(name),
+            () => (name, <ImportedSet>[]),
+          )
+          .$2
+          .add(
+            ImportedSet(
+              weight: reading.kilograms,
+              reps: reps,
+              recordedWeight: reading,
+            ),
+          );
+    } on ImportValidationException catch (e) {
+      skipped.add(CsvIssue(row.line, e.message));
+    } on FormatException catch (e) {
+      skipped.add(CsvIssue(row.line, e.message.toString()));
+    }
+  }
+  final ordered = groups.values.toList()
+    ..sort((a, b) {
+      final byTime = a.start.compareTo(b.start);
+      return byTime == 0 ? a.rows.first.compareTo(b.rows.first) : byTime;
+    });
+  return CsvParseResult(
+    source: CsvSource.gymTracker,
+    columns: rows.first.fields,
+    workouts: [
+      for (final group in ordered)
+        ImportedWorkout(
+          sourceRow: group.rows.first,
+          startedAt: group.start,
+          finishedAt: group.end,
+          name: group.title.isEmpty ? null : group.title,
+          note: '来源：gymTracker',
+          exercises: [
+            for (final entry in group.exercises.values)
+              ImportedExercise(name: entry.$1, sets: entry.$2),
+          ],
+        ),
+    ],
+    skipped: skipped,
+    statsByWorkout: [
+      for (final group in ordered)
+        WorkoutImportStats(group.rows, group.pounds, false),
+    ],
   );
 }

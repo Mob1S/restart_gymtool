@@ -7,11 +7,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 export async function run(h) {
   const {check,clickText,expectText,send,output,upload,exportFile,restoreFile,screenshot}=h;
   async function openImport(){
-    await clickText('设置',true);
-    for(let i=0;i<5 && !(await h.has('从 CSV 追加记录'));i++) {
-      await send('Input.dispatchMouseEvent',{type:'mouseWheel',x:180,y:550,deltaY:280,deltaX:0});await delay(250);
-    }
-    await clickText('从 CSV 追加记录',true);
+    await clickText('历史',true);
+    await clickText('记录操作',true);
+    await clickText('导入 CSV',true);
   }
   let baseline;
   const file=path.join(output,'strong.csv');

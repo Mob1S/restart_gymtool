@@ -41,7 +41,7 @@ void main() {
     },
   );
   for (final (label, patch) in <(String, void Function(Map<String, dynamic>))>[
-    ('future format', (m) => m['version'] = 4),
+    ('future format', (m) => m['version'] = 5),
     ('future schema', (m) => m['schemaVersion'] = 5),
     ('wrong app', (m) => m['format'] = 'other'),
     ('missing array', (m) => (m['data'] as Map).remove('sets')),
