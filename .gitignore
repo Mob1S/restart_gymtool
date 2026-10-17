@@ -23,3 +23,6 @@ Thumbs.db
 .DS_Store
 # Widget Preview related
 .widget_preview/
+
+# Claude Code 本地配置（各人的权限允许项，不进版本库）
+.claude/settings.local.json
