@@ -64,8 +64,8 @@ void main() {
     f.controller.stagePendingWeight(pending.id, 42.5);
     await f.controller.flushPendingWeight();
     final backup = await exportBackup(f.db, exportedAt: 0);
-    expect(backup.version, 5);
-    expect(backup.schemaVersion, 7);
+    expect(backup.version, 6);
+    expect(backup.schemaVersion, 8);
     final other = await FfiExecutor.openMigrated();
     addTearDown(other.close);
     await restoreBackup(other, await inspectBackup(other, backup));

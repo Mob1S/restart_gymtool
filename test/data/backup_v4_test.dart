@@ -294,7 +294,7 @@ void main() {
         await setSetting(db, 'theme_mode', 'dark');
         final incoming = validateBackup(v4Fixture());
         final preview = await inspectBackup(db, incoming);
-        expect(preview.incoming.version, 5);
+        expect(preview.incoming.version, 6);
         await restoreBackup(db, preview);
         final first = await exportBackup(db, exportedAt: 123);
         expect(

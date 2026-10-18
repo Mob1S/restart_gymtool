@@ -2,9 +2,11 @@ import 'dart:math' as math;
 
 import 'weight_value.dart';
 import 'local_date.dart';
+import 'training_prescription.dart';
+import 'set_detail.dart';
 
 const backupFormat = 'gym-tracker-backup';
-const backupVersion = 5;
+const backupVersion = 6;
 const maxBackupBytes = 20 * 1024 * 1024;
 const maxBackupRecords = 100000;
 const maxBackupTimestamp = 8640000000000000;
@@ -114,6 +116,12 @@ const _fields = <String, Map<String, _Field>>{
 
 Map<String, Map<String, _Field>> _versionFields(int version) => {
   ..._fields,
+  if (version >= 6) ...{
+    'catalogBindings': {'id': _Field.id, 'exerciseId': _Field.id},
+    'programs': {'id': _Field.id, 'payload': _Field.text},
+    'prescriptions': {'id': _Field.id, 'payload': _Field.text},
+    'setDetails': {'id': _Field.id, 'payload': _Field.text},
+  },
   if (version >= 4) ...{
     'plans': {
       'id': _Field.id,
@@ -225,12 +233,13 @@ BackupFile validateBackup(Object? input) {
   if (root['format'] != backupFormat) _fail('format', '不是本应用的备份文件');
   final version = root['version'];
   if (version is! int || version < 1 || version > backupVersion) {
-    _fail('version', '不受支持，请使用格式 1 / 2 / 3 / 4 / 5 的备份；新版本文件请先升级应用');
+    _fail('version', '不受支持，请使用格式 1 / 2 / 3 / 4 / 5 / 6 的备份；新版本文件请先升级应用');
   }
   final schema = root['schemaVersion'];
   if (schema is! int ||
       schema < 1 ||
       switch (version) {
+        6 => schema != 8,
         5 => schema != 7,
         4 => schema != 6,
         3 => schema < 5 || schema > 6,
@@ -350,6 +359,71 @@ BackupFile validateBackup(Object? input) {
   references('templateExercises', 'templateId', 'templates');
   references('templateExercises', 'exerciseId', 'exercises');
   references('sessions', 'templateId', 'templates', nullable: true);
+  if (version >= 6) {
+    references('catalogBindings', 'exerciseId', 'exercises');
+    references('programs', 'id', 'plans');
+    references('prescriptions', 'id', 'sessionExercises');
+    references('setDetails', 'id', 'sets');
+    final occurrences = {
+      for (final row in normalized['templateExercises']!) row['id']: row,
+    };
+    final days = {for (final row in normalized['templates']!) row['id']: row};
+    final actualSets = {for (final row in normalized['sets']!) row['id']: row};
+    for (final name in ['programs', 'prescriptions', 'setDetails']) {
+      for (final row in normalized[name]!) {
+        try {
+          final payload = row['payload'] as String;
+          if (name == 'programs') {
+            final p = TrainingProgram.decode(payload);
+            count += p.recordCount;
+            for (final stage in p.stages) {
+              for (final id in stage.targets.keys) {
+                final occurrence = occurrences[id];
+                if (occurrence == null ||
+                    days[occurrence['templateId']]?['planId'] != row['id']) {
+                  _fail('data.programs ${row['id']}', '目标动作不属于该计划');
+                }
+              }
+            }
+          } else if (name == 'prescriptions') {
+            final p = SessionPrescription.decode(payload);
+            count += p.targets.fold<int>(
+              0,
+              (n, t) => n + 1 + t.extraReps.length,
+            );
+          } else {
+            final d = SetDetail.decode(payload);
+            final parent = actualSets[row['id']]!;
+            if (parent['isCompleted'] == true &&
+                (d.intraRestStartedAt != null ||
+                    d.segmentStartedAt != null ||
+                    d.pendingReading != null)) {
+              _fail('data.setDetails ${row['id']}', '已完成组不能保留进行中的分段');
+            }
+            if (parent['isCompleted'] == true &&
+                d.target?.isRestPause == true &&
+                (d.firstCompletedAt == null ||
+                    (!d.endedEarly &&
+                        d.continuations.length !=
+                            d.target!.extraReps.length))) {
+              _fail('data.setDetails ${row['id']}', '已完成分段组缺少实际段');
+            }
+            if (parent['isCompleted'] == false &&
+                d.firstCompletedAt == null &&
+                d.effort != null) {
+              _fail('data.setDetails ${row['id']}', '未做的占位组不能带有实际用力程度');
+            }
+            count +=
+                d.continuations.length +
+                (d.target == null ? 0 : 1 + d.target!.extraReps.length);
+          }
+          if (count > maxBackupRecords) _fail('data', '记录总数超过 100,000 条上限');
+        } on FormatException catch (e) {
+          _fail('data.$name ${row['id']}', e.message);
+        }
+      }
+    }
+  }
   if (version >= 4) {
     references('templates', 'planId', 'plans');
     references('sessions', 'planId', 'plans', nullable: true);

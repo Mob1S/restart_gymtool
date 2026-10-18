@@ -61,7 +61,7 @@ void main() {
       (await exec.first<Map<String, Object?>>(
         "SELECT value FROM app_meta WHERE key='schema_version'",
       ))!['value'],
-      '7',
+      '8',
     );
   });
   test(

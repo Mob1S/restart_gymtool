@@ -8,6 +8,7 @@ import '../db/sql_executor.dart';
 import '../ids.dart';
 import 'template_repo.dart';
 import 'backup_repo.dart';
+import 'training_program_repo.dart';
 
 Future<List<TrainingPlanDetail>> listTrainingPlans(SqlExecutor exec) =>
     exec.transaction(readTrainingPlans);
@@ -49,6 +50,7 @@ Future<TrainingPlanDetail?> readTrainingPlan(SqlExecutor tx, String id) async {
     // by a draft save. First home selection must not invalidate an open draft.
     token: jsonEncode([
       {...row}..remove('activated_on'),
+      (await readTrainingProgram(tx, id))?.encode(),
       for (final day in details) day.editToken,
     ]),
     days: [
@@ -56,6 +58,7 @@ Future<TrainingPlanDetail?> readTrainingPlan(SqlExecutor tx, String id) async {
         TrainingDay(
           id: day.template.id,
           name: day.template.name,
+          occurrenceIds: [for (final item in day.exercises) item.entry.id],
           kind: day.template.kind,
           exerciseIds: [
             for (final item in day.exercises) item.entry.exerciseId,
@@ -68,7 +71,12 @@ Future<TrainingPlanDetail?> readTrainingPlan(SqlExecutor tx, String id) async {
 Future<TrainingPlanDetail> saveTrainingPlan(
   SqlExecutor exec,
   TrainingPlanDraft draft,
-) => exec.transaction((tx) async {
+) => exec.transaction((tx) => writeTrainingPlan(tx, draft));
+
+Future<TrainingPlanDetail> writeTrainingPlan(
+  SqlExecutor tx,
+  TrainingPlanDraft draft,
+) async {
   final name = draft.name.trim();
   if (name.isEmpty) throw const PlanValidationException('请输入训练计划名称');
   if (draft.days.length > 100000 ||
@@ -198,9 +206,10 @@ Future<TrainingPlanDetail> saveTrainingPlan(
       await tx.run('DELETE FROM template_exercise WHERE id=?', [removed]);
     }
   }
+  await pruneTrainingProgram(tx, id);
   encodeBackup(await readBackupSnapshot(tx, exportedAt: 0));
   return (await readTrainingPlan(tx, id))!;
-});
+}
 
 /// Home selection starts leading rest exactly once. Listing/editing never does.
 Future<void> activateTrainingPlan(

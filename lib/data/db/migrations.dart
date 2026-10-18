@@ -1,6 +1,7 @@
 import 'schema.dart';
 import 'sql_executor.dart';
 import 'training_v6_migration.dart';
+import 'training_v8_migration.dart';
 
 /// 一个版本化迁移项。
 ///
@@ -62,10 +63,11 @@ const List<Migration> migrations = [
       'ALTER TABLE training_plan ADD COLUMN activated_on TEXT',
     ],
   ),
+  Migration(version: 8, statements: trainingV8Statements),
 ];
 
 /// 当前库结构版本。必须与 [migrations] 的最后一项保持一致。
-const int schemaVersion = 7;
+const int schemaVersion = 8;
 
 /// 读出当前库结构版本。
 ///
@@ -94,7 +96,7 @@ Future<void> migrate(SqlExecutor exec) async {
     ..sort((a, b) => a.version - b.version);
 
   for (final migration in pending) {
-    if (migration.version == 7) {
+    if (migration.version >= 7) {
       await exec.transaction((tx) async {
         for (final statement in migration.statements) {
           await tx.run(statement);
@@ -102,7 +104,7 @@ Future<void> migrate(SqlExecutor exec) async {
         await tx.run(
           "INSERT INTO app_meta(key,value) VALUES('schema_version',?) "
           'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-          ['7'],
+          ['${migration.version}'],
         );
       });
       continue;

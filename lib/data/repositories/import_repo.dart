@@ -8,6 +8,8 @@ import '../../domain/weight_value.dart';
 import '../db/sql_executor.dart';
 import '../ids.dart';
 import 'backup_repo.dart';
+import '../../domain/set_detail.dart';
+import 'set_detail_repo.dart';
 
 Future<ImportCatalog> loadImportCatalog(SqlExecutor exec) =>
     exec.transaction((tx) async {
@@ -38,12 +40,17 @@ Future<ImportCatalog> loadImportCatalog(SqlExecutor exec) =>
       }
 
       final orderedSets = orderedRows('sets');
+      final details = {
+        for (final row in snapshot.rows('setDetails'))
+          row['id']: SetDetail.decode(row['payload'] as String),
+      };
       for (final s in orderedSets) {
         if (s['isCompleted'] == true) {
           sets
               .putIfAbsent(s['sessionExerciseId'] as String, () => [])
               .add(
                 ImportedSet(
+                  detail: details[s['id']],
                   weight: (s['weight'] as num).toDouble(),
                   reps: s['reps'] as int,
                   recordedWeight: s['sourceWeight'] == null
@@ -155,10 +162,11 @@ Future<ImportResult> importWorkouts(
         );
         var setPosition = 0;
         for (final set in entry.value.$2) {
+          final setId = newId();
           await tx.run(
             'INSERT INTO set_entry (id,session_exercise_id,position,weight,reps,is_completed,rest_seconds,rest_started_at,completed_at,source_weight,source_unit) VALUES (?,?,?,?,?,1,NULL,NULL,?,?,?)',
             [
-              newId(),
+              setId,
               seId,
               setPosition++,
               set.weight,
@@ -168,6 +176,7 @@ Future<ImportResult> importWorkouts(
               set.equipmentWeight.unit.name,
             ],
           );
+          if (set.detail != null) await writeSetDetail(tx, setId, set.detail!);
           sets++;
         }
       }

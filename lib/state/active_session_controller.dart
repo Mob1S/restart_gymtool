@@ -11,6 +11,11 @@ import '../data/repositories/workout_edit_repo.dart';
 import '../data/repositories/exercise_replacement_repo.dart';
 import '../domain/session_label.dart';
 import '../domain/types.dart';
+import '../domain/set_detail.dart';
+import '../domain/training_prescription.dart';
+import '../domain/load_reference.dart';
+import '../data/repositories/load_reference_repo.dart';
+import '../data/repositories/set_detail_repo.dart';
 import '../domain/weight_value.dart';
 import '../domain/exercise_visibility.dart';
 import '../domain/plans.dart';
@@ -18,6 +23,7 @@ import '../domain/record_management.dart';
 import '../domain/backup_codec.dart';
 import '../data/repositories/backup_repo.dart';
 import '../data/repositories/workout_plan_repo.dart';
+import '../data/repositories/training_program_repo.dart';
 import '../data/repositories/record_management_repo.dart';
 
 const double defaultWeightKg = 20;
@@ -252,6 +258,7 @@ class ActiveSessionController extends ChangeNotifier {
     double weight,
     int reps, {
     EquipmentWeight? reading,
+    SetDetail? detail,
   }) async {
     if (session?.id != edit.sessionId || session?.finishedAt != null) {
       return WorkoutWriteResult.conflict;
@@ -264,6 +271,7 @@ class ActiveSessionController extends ChangeNotifier {
         weight: weight,
         reps: reps,
         reading: reading,
+        detail: detail,
       ),
     );
   }
@@ -441,6 +449,14 @@ class ActiveSessionController extends ChangeNotifier {
           for (final exerciseId in plan.exerciseIds) {
             await addExerciseWithFirstSet(tx, s.id, exerciseId);
           }
+          if (plan.planId != null && plan.templateId != null) {
+            await snapshotWorkoutProgram(
+              tx,
+              plan.planId!,
+              plan.templateId!,
+              s.id,
+            );
+          }
           encodeBackup(await readBackupSnapshot(tx, exportedAt: _now()));
           return s;
         });
@@ -517,7 +533,11 @@ class ActiveSessionController extends ChangeNotifier {
     await completeCurrentReading(EquipmentWeight.kg(weight), reps);
   }
 
-  Future<void> completeCurrentReading(EquipmentWeight reading, int reps) async {
+  Future<void> completeCurrentReading(
+    EquipmentWeight reading,
+    int reps, {
+    Effort? effort,
+  }) async {
     if (writing && !savingWeight) return;
     if (!await _flushReady() || writing) return;
     final current = session;
@@ -535,6 +555,51 @@ class ActiveSessionController extends ChangeNotifier {
         weight: reading.kilograms,
         reading: reading,
         reps: reps,
+        now: _now(),
+        effort: effort,
+      ),
+    );
+  }
+
+  /// 结束休息、进入下一组：写入这段休息的秒数并清掉 `restStartedAt`。
+  Future<WorkoutWriteResult> adoptReference(
+    String pendingId,
+    LoadReference reference,
+  ) async {
+    if (!await _flushReady()) return WorkoutWriteResult.failed;
+    return _write(
+      () => applyLoadReference(
+        _exec,
+        pendingSetId: pendingId,
+        expectedToken: reference.token,
+        now: _now(),
+      ),
+    );
+  }
+
+  Future<WorkoutWriteResult> beginNextSegment(String pendingId) async {
+    if (!await _flushReady() || session == null) {
+      return WorkoutWriteResult.failed;
+    }
+    return _write(
+      () => beginWorkoutSegment(
+        _exec,
+        sessionId: session!.id,
+        setId: pendingId,
+        now: _now(),
+      ),
+    );
+  }
+
+  Future<WorkoutWriteResult> finishPartialGroup(String pendingId) async {
+    if (!await _flushReady() || session == null) {
+      return WorkoutWriteResult.failed;
+    }
+    return _write(
+      () => endPartialSet(
+        _exec,
+        sessionId: session!.id,
+        setId: pendingId,
         now: _now(),
       ),
     );
@@ -693,7 +758,7 @@ class ActiveSessionController extends ChangeNotifier {
       sessionId,
       id,
       target.exerciseName,
-      target.sets.where((s) => s.isCompleted).length,
+      target.sets.where((s) => s.hasRecordedWork).length,
       visible,
       parent.token,
     );

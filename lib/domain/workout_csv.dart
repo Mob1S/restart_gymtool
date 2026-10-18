@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'csv_records.dart';
 import 'import_records.dart';
 import 'weight_value.dart';
+import 'set_detail.dart';
+import 'training_prescription.dart';
 
 export 'weight_value.dart' show WeightUnit;
 
@@ -315,7 +317,149 @@ class _NativeGroup {
   _NativeGroup(this.id, this.title, this.start, this.end);
 }
 
-CsvParseResult _parseNativeCsv(List<CsvRecord> rows, List<String> header) {
+CsvParseResult _parseSegmentCsv(List<CsvRecord> rows, List<String> header) {
+  const required = [
+    'session_id',
+    'start_time',
+    'end_time',
+    'title',
+    'exercise_title',
+    'set_index',
+    'weight',
+    'weight_unit',
+    'weight_kg',
+    'reps',
+    'group_id',
+    'segment_index',
+    'pause_seconds',
+    'set_role',
+    'effort_kind',
+    'effort_value',
+    'effort_bound',
+    'set_detail',
+  ];
+  if (header.toSet().length != header.length ||
+      required.any((c) => !header.contains(c))) {
+    throw const ImportValidationException('分段 CSV 表头缺少字段或有重复列');
+  }
+  final columns = {for (final name in header) name: header.indexOf(name)};
+  String field(CsvRecord row, String name) => row.fields[columns[name]!].trim();
+  final groups = <String, List<CsvRecord>>{};
+  final issues = <CsvIssue>[];
+  for (final row in rows.skip(1)) {
+    if (row.fields.length != header.length) {
+      issues.add(CsvIssue(row.line, '列数与表头不一致'));
+      continue;
+    }
+    final id = field(row, 'group_id');
+    if (id.isEmpty) {
+      issues.add(CsvIssue(row.line, '缺少逻辑组标识'));
+      continue;
+    }
+    final key = jsonEncode([field(row, 'session_id'), id]);
+    groups.putIfAbsent(key, () => []).add(row);
+  }
+  final logical = <CsvRecord>[rows.first];
+  for (final group in groups.values) {
+    try {
+      group.sort(
+        (a, b) => (int.tryParse(field(a, 'segment_index')) ?? -1).compareTo(
+          int.tryParse(field(b, 'segment_index')) ?? -1,
+        ),
+      );
+      final first = group.first;
+      final json = field(first, 'set_detail');
+      final detail = json.isEmpty ? null : SetDetail.decode(json);
+      if (group.length != 1 + (detail?.continuations.length ?? 0)) {
+        throw const FormatException('分段不完整，整组未导入');
+      }
+      for (final (i, row) in group.indexed) {
+        if (int.tryParse(field(row, 'segment_index')) != i + 1) {
+          throw const FormatException('分段序号重复或不连续');
+        }
+        for (final name in [
+          'session_id',
+          'start_time',
+          'end_time',
+          'title',
+          'exercise_title',
+          'set_index',
+          'set_role',
+        ]) {
+          if (field(row, name) != field(first, name)) {
+            throw const FormatException('同一逻辑组的训练或动作信息冲突');
+          }
+        }
+        final reading = EquipmentWeight(
+          DecimalReading.parse(field(row, 'weight')),
+          WeightUnit.values.byName(field(row, 'weight_unit')),
+        );
+        final kg = double.tryParse(field(row, 'weight_kg'));
+        final reps = int.tryParse(field(row, 'reps'));
+        if (kg == null ||
+            !kg.isFinite ||
+            reps == null ||
+            reps < 0 ||
+            (reading.kilograms - kg).abs() > (kg.abs() * 1e-12 + 1e-9)) {
+          throw const FormatException('分段重量或次数无效，或器械读数与公斤重量不一致');
+        }
+        final effort = field(row, 'effort_kind').isEmpty
+            ? null
+            : Effort(
+                field(row, 'effort_kind'),
+                double.parse(field(row, 'effort_value')),
+                bound: field(row, 'effort_bound'),
+              );
+        effort?.validate();
+        final actualEffort = i == 0
+            ? detail?.effort
+            : detail!.continuations[i - 1].effort;
+        if (jsonEncode(effort?.toJson()) !=
+                jsonEncode(actualEffort?.toJson()) ||
+            field(row, 'set_role') != (detail?.role ?? 'unknown')) {
+          throw const FormatException('分段用力程度或组类型与详情冲突');
+        }
+        if (i == 0) {
+          if (field(row, 'pause_seconds') != '0') {
+            throw const FormatException('首段不能带有组内停顿');
+          }
+        } else {
+          final segment = detail!.continuations[i - 1];
+          if (segment.reading.amount.text != reading.amount.text ||
+              segment.reading.unit != reading.unit ||
+              segment.reps != reps ||
+              segment.pauseSeconds !=
+                  int.tryParse(field(row, 'pause_seconds')) ||
+              field(row, 'set_detail').isNotEmpty) {
+            throw const FormatException('分段实际记录与组详情冲突');
+          }
+        }
+      }
+      logical.add(first);
+    } on FormatException catch (e) {
+      issues.add(CsvIssue(group.first.line, e.message.toString()));
+    } on ArgumentError {
+      issues.add(CsvIssue(group.first.line, '分段单位或数值无效'));
+    }
+  }
+  final result = _parseNativeCsv(logical, header, collapsed: true);
+  return CsvParseResult(
+    source: result.source,
+    columns: result.columns,
+    workouts: result.workouts,
+    skipped: [...issues, ...result.skipped],
+    statsByWorkout: result.statsByWorkout,
+  );
+}
+
+CsvParseResult _parseNativeCsv(
+  List<CsvRecord> rows,
+  List<String> header, {
+  bool collapsed = false,
+}) {
+  if (!collapsed && header.contains('segment_index')) {
+    return _parseSegmentCsv(rows, header);
+  }
   const requiredColumns = [
     'session_id',
     'start_time',
@@ -334,6 +478,8 @@ CsvParseResult _parseNativeCsv(List<CsvRecord> rows, List<String> header) {
   }
   final positions = {
     for (final name in requiredColumns) name: header.indexOf(name),
+    if (header.contains('set_detail'))
+      'set_detail': header.indexOf('set_detail'),
   };
   final groups = <String, _NativeGroup>{};
   final skipped = <CsvIssue>[];
@@ -367,7 +513,7 @@ CsvParseResult _parseNativeCsv(List<CsvRecord> rows, List<String> header) {
           !kg.isFinite ||
           kg < 0 ||
           reps == null ||
-          reps <= 0 ||
+          reps < 0 ||
           position == null ||
           position <= 0) {
         throw const ImportValidationException('重量、组序号或次数无效');
@@ -376,6 +522,10 @@ CsvParseResult _parseNativeCsv(List<CsvRecord> rows, List<String> header) {
       if ((reading.kilograms - kg).abs() > tolerance) {
         throw const ImportValidationException('器械读数与公斤重量不一致');
       }
+      final detailText = positions.containsKey('set_detail')
+          ? field('set_detail')
+          : '';
+      final detail = detailText.isEmpty ? null : SetDetail.decode(detailText);
       final previous = groups[id];
       if (previous != null &&
           (previous.start != start ||
@@ -400,6 +550,7 @@ CsvParseResult _parseNativeCsv(List<CsvRecord> rows, List<String> header) {
               weight: reading.kilograms,
               reps: reps,
               recordedWeight: reading,
+              detail: detail,
             ),
           );
     } on ImportValidationException catch (e) {

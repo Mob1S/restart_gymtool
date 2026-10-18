@@ -33,13 +33,16 @@ class TrainingDayDraft {
 class TrainingDay {
   final String id, name;
   final List<String> exerciseIds;
+  final List<String> occurrenceIds;
   final TrainingDayKind kind;
   TrainingDay({
     required this.id,
+    List<String> occurrenceIds = const [],
     this.kind = TrainingDayKind.training,
     required this.name,
     required List<String> exerciseIds,
-  }) : exerciseIds = List.unmodifiable(exerciseIds);
+  }) : exerciseIds = List.unmodifiable(exerciseIds),
+       occurrenceIds = List.unmodifiable(occurrenceIds);
   TrainingDayDraft toDraft() => TrainingDayDraft(
     id: id,
     name: name,

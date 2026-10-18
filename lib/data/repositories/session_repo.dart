@@ -1,6 +1,7 @@
 import '../../domain/metrics.dart';
 import '../../domain/types.dart';
 import '../../domain/local_date.dart';
+import '../../domain/set_detail.dart';
 import '../db/sql_executor.dart';
 import '../ids.dart';
 
@@ -264,17 +265,33 @@ Future<String?> findLastActiveSessionExerciseId(
   SqlExecutor exec,
   String sessionId,
 ) async {
-  final row = await exec.first<Map<String, Object?>>(
-    '''SELECT se.id AS id
+  final rows = await exec.all<Map<String, Object?>>(
+    '''SELECT se.id AS id, st.completed_at, sd.payload
          FROM set_entry st
          JOIN session_exercise se ON se.id = st.session_exercise_id
+         LEFT JOIN set_detail sd ON sd.id=st.id
         WHERE se.session_id = ?
-          AND st.completed_at IS NOT NULL
-        ORDER BY st.completed_at DESC, st.rowid DESC
-        LIMIT 1''',
+          AND (st.completed_at IS NOT NULL OR sd.id IS NOT NULL)
+        ORDER BY st.rowid DESC''',
     [sessionId],
   );
-  return row?['id'] as String?;
+  String? latestId;
+  var latestAt = -1;
+  for (final row in rows) {
+    final detail = row['payload'] == null
+        ? null
+        : SetDetail.decode(row['payload'] as String);
+    final at =
+        row['completed_at'] as int? ??
+        detail?.segmentStartedAt ??
+        detail?.continuations.lastOrNull?.completedAt ??
+        detail?.firstCompletedAt;
+    if (at != null && at > latestAt) {
+      latestAt = at;
+      latestId = row['id'] as String;
+    }
+  }
+  return latestId;
 }
 
 /// 历史列表的一行：一场已结束训练 + 两个聚合数。
@@ -366,7 +383,35 @@ Future<List<SessionSummaryRow>> listSessionSummaries(
             date.nextStart.millisecondsSinceEpoch,
           ],
   );
-  return rows.map(SessionSummaryRow.fromMap).toList();
+  final details = await exec.all<Map<String, Object?>>(
+    '''SELECT se.session_id, sd.payload FROM set_detail sd
+      JOIN set_entry st ON st.id=sd.id
+      JOIN session_exercise se ON se.id=st.session_exercise_id
+      JOIN session s ON s.id=se.session_id
+      WHERE st.is_completed=1 AND s.finished_at IS NOT NULL
+      ${date == null ? '' : 'AND s.started_at>=? AND s.started_at<?'}''',
+    date == null
+        ? null
+        : [
+            date.start.millisecondsSinceEpoch,
+            date.nextStart.millisecondsSinceEpoch,
+          ],
+  );
+  final extras = <String, double>{};
+  for (final row in details) {
+    final id = row['session_id'] as String;
+    extras[id] =
+        (extras[id] ?? 0) +
+        SetDetail.decode(row['payload'] as String).extraVolume;
+  }
+  return [
+    for (final row in rows)
+      SessionSummaryRow.fromMap({
+        ...row,
+        'volume_load':
+            (row['volume_load'] as num).toDouble() + (extras[row['id']] ?? 0),
+      }),
+  ];
 }
 
 Future<Set<String>> listCompletedTrainingDates(

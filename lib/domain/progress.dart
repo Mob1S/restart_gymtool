@@ -15,6 +15,7 @@ class SetFact {
   /// 重量（kg）
   final double weight;
   final int reps;
+  final bool e1rmEligible;
 
   const SetFact({
     required this.exerciseId,
@@ -22,6 +23,7 @@ class SetFact {
     required this.sessionStartedAt,
     required this.weight,
     required this.reps,
+    this.e1rmEligible = true,
   });
 }
 
@@ -118,7 +120,7 @@ SessionPoint _sessionPoint(List<SetFact> sets) {
       topWeightReps = s.reps;
     }
 
-    final e1rm = estimateOneRepMax(s.weight, s.reps);
+    final e1rm = s.e1rmEligible ? estimateOneRepMax(s.weight, s.reps) : null;
     if (e1rm == null) continue;
     // 并列时取更重的一组：e1RM 恰好相等并非不可能，而「第一次遇到的」
     // 依赖输入顺序 —— 本函数刚承诺过不依赖它

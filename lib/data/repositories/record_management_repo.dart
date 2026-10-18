@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../domain/record_management.dart';
 import '../db/sql_executor.dart';
 import 'session_repo.dart';
+import 'set_detail_repo.dart';
 
 Future<SessionDeletePreview?> inspectSessionDeletion(
   SqlExecutor exec,
@@ -22,7 +23,7 @@ Future<SessionDeletePreview?> readSessionDeletion(
     [id],
   );
   final sets = await tx.all<Map<String, Object?>>(
-    'SELECT st.* FROM set_entry st JOIN session_exercise se ON se.id=st.session_exercise_id WHERE se.session_id=? ORDER BY se.position,se.rowid,st.position,st.rowid',
+    'SELECT st.*, sd.payload AS detail_payload FROM set_entry st JOIN session_exercise se ON se.id=st.session_exercise_id LEFT JOIN set_detail sd ON sd.id=st.id WHERE se.session_id=? ORDER BY se.position,se.rowid,st.position,st.rowid',
     [id],
   );
   return SessionDeletePreview(
@@ -75,6 +76,11 @@ Future<void> deleteSessionExercise(SqlExecutor tx, String id) async {
 }
 
 Future<void> retainCompletedSets(SqlExecutor tx, String id) async {
+  await finalizePartialSets(
+    tx,
+    sessionExerciseId: id,
+    now: DateTime.now().millisecondsSinceEpoch,
+  );
   await tx.run(
     'DELETE FROM set_entry WHERE session_exercise_id=? AND is_completed=0',
     [id],

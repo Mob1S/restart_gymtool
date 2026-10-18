@@ -1,12 +1,16 @@
 import 'dart:convert';
 
+import 'set_detail.dart';
+
 import 'weight_value.dart';
 
 class ImportedSet {
+  final SetDetail? detail;
   final double weight;
   final int reps;
   final EquipmentWeight? recordedWeight;
   const ImportedSet({
+    this.detail,
     required this.weight,
     required this.reps,
     this.recordedWeight,
@@ -91,8 +95,13 @@ void validateImportedWorkouts(List<ImportedWorkout> workouts) {
       count += e.sets.length;
       if (count > 100000) fail('导入记录超过 100,000 条');
       for (final s in e.sets) {
-        if (!s.weight.isFinite || s.weight < 0 || s.reps <= 0) {
-          fail('重量须为非负有限数，次数须为正整数');
+        if (s.detail != null) {
+          SetDetail.decode(s.detail!.encode());
+          count += s.detail!.continuations.length;
+          if (count > 100000) fail('导入记录超过 100,000 条');
+        }
+        if (!s.weight.isFinite || s.weight < 0 || s.reps < 0) {
+          fail('重量须为非负有限数，次数须为非负整数');
         }
         final kilograms = s.equipmentWeight.kilograms;
         final tolerance = s.weight.abs() * 1e-12 > 1e-9
@@ -113,6 +122,7 @@ String workoutFingerprint(ImportedWorkout w) => jsonEncode([
   for (final e in w.exercises)
     [
       normalizeExerciseName(e.name),
-      for (final s in e.sets) [s.weight, s.reps],
+      for (final s in e.sets)
+        [s.weight, s.reps, if (s.detail != null) s.detail!.toJson()],
     ],
 ]);

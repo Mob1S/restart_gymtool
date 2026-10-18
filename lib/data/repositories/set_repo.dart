@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../../domain/types.dart';
 import '../../domain/weight_value.dart';
+import '../../domain/set_detail.dart';
 import '../db/sql_executor.dart';
 import '../ids.dart';
 
@@ -10,6 +11,7 @@ import '../ids.dart';
 /// **字段用 camelCase，列名（map 的键）用 snake_case** —— 两者的对应关系由
 /// [SetRow.fromMap] 一处显式写出（约定见 Global Constraints）。
 class SetRow {
+  final SetDetail? detail;
   final String id;
   final String sessionExerciseId;
   final int position;
@@ -22,6 +24,7 @@ class SetRow {
   final int? completedAt;
 
   const SetRow({
+    this.detail,
     required this.id,
     required this.sessionExerciseId,
     required this.position,
@@ -35,6 +38,9 @@ class SetRow {
   });
 
   factory SetRow.fromMap(Map<String, Object?> m) => SetRow(
+    detail: m['detail_payload'] == null
+        ? null
+        : SetDetail.decode(m['detail_payload'] as String),
     id: m['id'] as String,
     sessionExerciseId: m['session_exercise_id'] as String,
     position: m['position'] as int,
@@ -55,6 +61,7 @@ class SetRow {
 
 /// `is_completed` 的 0/1 在这里还原成布尔。
 SetEntry toSetEntry(SetRow row) => SetEntry(
+  detail: row.detail,
   id: row.id,
   sessionExerciseId: row.sessionExerciseId,
   position: row.position,
@@ -146,9 +153,10 @@ Future<List<SetEntry>> listSets(
   String sessionExerciseId,
 ) async {
   final rows = await exec.all<Map<String, Object?>>(
-    '''SELECT $setColumns FROM set_entry
-       WHERE session_exercise_id = ?
-       ORDER BY position ASC, rowid ASC''',
+    '''SELECT $setColumnsPrefixed,sd.payload AS detail_payload FROM set_entry st
+       LEFT JOIN set_detail sd ON sd.id=st.id
+       WHERE st.session_exercise_id = ?
+       ORDER BY st.position ASC, st.rowid ASC''',
     [sessionExerciseId],
   );
   return rows.map((m) => toSetEntry(SetRow.fromMap(m))).toList();

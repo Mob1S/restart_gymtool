@@ -36,7 +36,7 @@ Future<ExerciseReplacementPreview> _inspect(
     targetExerciseId: targetId,
     sourceName: (await getExercise(tx, source.exerciseId))?.name ?? '动作',
     targetName: target.name,
-    completedSets: sets.where((s) => s.isCompleted).length,
+    completedSets: sets.where((s) => s.hasRecordedWork).length,
     token: token,
   );
 }

@@ -18,7 +18,7 @@ void main() {
 
   test('native CSV preserves source readings, exact kg and escaped fields', () {
     final csv = encodeWorkoutCsv([row('one', '50', WeightUnit.lb)]);
-    expect(csv, contains(',50,lb,22.6796185,8\r\n'));
+    expect(csv, contains(',50,lb,22.6796185,8,'));
     final parsed = parseWorkoutCsv(csv);
     expect(parsed.source, CsvSource.gymTracker);
     expect(parsed.skipped, isEmpty);

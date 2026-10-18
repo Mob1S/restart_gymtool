@@ -1,4 +1,5 @@
 import '../../domain/progress.dart';
+import '../../domain/set_detail.dart';
 import '../db/sql_executor.dart';
 
 /// 三表 JOIN 查出来的原始行。
@@ -60,13 +61,38 @@ Future<List<SetFact>> listAllCompletedSetFacts(SqlExecutor exec) async {
               s.id           AS session_id,
               s.started_at   AS session_started_at,
               st.weight      AS weight,
-              st.reps        AS reps
+              st.reps        AS reps, sd.payload AS detail_payload
          FROM set_entry st
          JOIN session_exercise se ON se.id = st.session_exercise_id
          JOIN session s           ON s.id  = se.session_id
+         LEFT JOIN set_detail sd ON sd.id = st.id
         WHERE st.is_completed = 1
           AND s.finished_at IS NOT NULL
         ORDER BY s.started_at ASC, s.rowid ASC, se.position ASC, st.rowid ASC''',
   );
-  return rows.map((m) => toSetFact(SetFactRow.fromMap(m))).toList();
+  return [for (final m in rows) ..._facts(m)];
+}
+
+List<SetFact> _facts(Map<String, Object?> row) {
+  final original = toSetFact(SetFactRow.fromMap(row));
+  final detail = row['detail_payload'] == null
+      ? null
+      : SetDetail.decode(row['detail_payload'] as String);
+  SetFact fact(double weight, int reps, bool eligible) => SetFact(
+    exerciseId: original.exerciseId,
+    sessionId: original.sessionId,
+    sessionStartedAt: original.sessionStartedAt,
+    weight: weight,
+    reps: reps,
+    e1rmEligible: eligible,
+  );
+  return [
+    fact(
+      original.weight,
+      original.reps,
+      detail?.isRestPause != true && detail?.role != 'warmup',
+    ),
+    for (final segment in detail?.continuations ?? <RecordedSegment>[])
+      fact(segment.reading.kilograms, segment.reps, false),
+  ];
 }

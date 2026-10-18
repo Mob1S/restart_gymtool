@@ -102,7 +102,7 @@ void main() {
       isEmpty,
     );
     await migrate(exec);
-    expect(await getSchemaVersion(exec), 7);
+    expect(await getSchemaVersion(exec), 8);
     await exec.run(
       "INSERT INTO split_template (id,name,position,created_at) VALUES ('p','推日',0,1)",
     );

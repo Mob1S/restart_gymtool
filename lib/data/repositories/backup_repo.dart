@@ -26,6 +26,10 @@ String _column(String field) =>
     field.replaceAllMapped(RegExp('[A-Z]'), (m) => '_${m[0]!.toLowerCase()}');
 
 const _tables = {
+  'catalogBindings': _Table('exercise_catalog_binding', ['id', 'exerciseId']),
+  'programs': _Table('training_program', ['id', 'payload']),
+  'prescriptions': _Table('session_prescription', ['id', 'payload']),
+  'setDetails': _Table('set_detail', ['id', 'payload']),
   'exercisePreferences': _Table(
     'exercise_preference',
     [
@@ -168,19 +172,23 @@ Future<BackupPreview> inspectBackup(
   // Check the source byte limit before normalization as well as the expanded
   // current size; neither legacy defaults nor new parent rows bypass limits.
   encodeBackup(incoming);
-  final validated = validateBackup(upgradeBackupToV5(incoming.toJson()));
+  final validated = validateBackup(upgradeBackupToV6(incoming.toJson()));
   encodeBackup(validated);
   return BackupPreview._(validated, await exportBackup(exec, exportedAt: 0));
 }
 
 Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
-  final incoming = validateBackup(upgradeBackupToV5(preview.incoming.toJson()));
+  final incoming = validateBackup(upgradeBackupToV6(preview.incoming.toJson()));
   await exec.transaction((tx) async {
     final current = await _snapshot(tx, 0);
     if (jsonEncode(current.data) != preview._baseline) {
       throw const BackupValidationException('本机数据已变化，请重新预览并确认恢复');
     }
     for (final table in [
+      'set_detail',
+      'session_prescription',
+      'training_program',
+      'exercise_catalog_binding',
       'set_entry',
       'session_exercise',
       'session',
@@ -201,6 +209,10 @@ Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
       'sessions',
       'sessionExercises',
       'sets',
+      'catalogBindings',
+      'programs',
+      'prescriptions',
+      'setDetails',
     ]) {
       await _insert(tx, key, incoming.rows(key));
     }

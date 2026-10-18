@@ -1,4 +1,5 @@
 import 'weight_value.dart';
+import 'set_detail.dart';
 
 /// 动作库里的一个动作。
 ///
@@ -103,6 +104,15 @@ class SessionExercise {
 /// 记录界面会为「下一组」预先建一条 `isCompleted: false` 的占位 —— 界面靠
 /// 找这条占位来确定当前该记哪一组，所以它必须存在。
 class SetEntry {
+  final SetDetail? detail;
+  bool get hasRecordedWork => isCompleted || detail?.firstCompletedAt != null;
+  int get pendingReps =>
+      !isCompleted &&
+          detail?.isRestPause == true &&
+          detail!.firstCompletedAt != null &&
+          detail!.currentSegment < detail!.target!.segmentReps.length
+      ? detail!.target!.segmentReps[detail!.currentSegment]
+      : reps;
   final String id;
 
   /// 指向 [SessionExercise.id]（**不是** `exerciseId`）——
@@ -116,7 +126,12 @@ class SetEntry {
   final double weight;
   final EquipmentWeight? recordedWeight;
   EquipmentWeight get equipmentWeight =>
-      recordedWeight ?? EquipmentWeight.kg(weight);
+      (!isCompleted ? detail?.pendingReading : null) ??
+      (!isCompleted && detail?.firstCompletedAt != null
+          ? detail?.continuations.lastOrNull?.reading
+          : null) ??
+      recordedWeight ??
+      EquipmentWeight.kg(weight);
   final int reps;
   final bool isCompleted;
 
@@ -128,6 +143,7 @@ class SetEntry {
   final int? completedAt;
 
   const SetEntry({
+    this.detail,
     required this.id,
     required this.sessionExerciseId,
     required this.position,

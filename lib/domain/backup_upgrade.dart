@@ -89,7 +89,7 @@ Map<String, Object?> upgradeBackupToV4(Map<String, Object?> root) {
 /// additionally fill rest-day fields without changing historical readings.
 Map<String, Object?> upgradeBackupToV5(Map<String, Object?> root) {
   final source = validateBackup(upgradeBackupToV4(root));
-  if (source.version == 5) return source.toJson();
+  if (source.version >= 5) return source.toJson();
   return validateBackup({
     ...source.toJson(),
     'version': 5,
@@ -103,6 +103,23 @@ Map<String, Object?> upgradeBackupToV5(Map<String, Object?> root) {
         for (final row in source.rows('templates'))
           {...row, 'kind': 'training'},
       ],
+    },
+  }).toJson();
+}
+
+Map<String, Object?> upgradeBackupToV6(Map<String, Object?> root) {
+  final source = validateBackup(upgradeBackupToV5(root));
+  if (source.version >= 6) return source.toJson();
+  return validateBackup({
+    ...source.toJson(),
+    'version': 6,
+    'schemaVersion': 8,
+    'data': {
+      ...source.data,
+      'catalogBindings': [],
+      'programs': [],
+      'prescriptions': [],
+      'setDetails': [],
     },
   }).toJson();
 }

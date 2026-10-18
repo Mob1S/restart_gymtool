@@ -7,6 +7,7 @@ import 'backup_repo.dart';
 import 'exercise_preferences_repo.dart';
 import 'set_repo.dart';
 import 'workout_write_repo.dart';
+import 'set_detail_repo.dart';
 
 /// Commits the pending reading and action settings atomically. A stale modal
 /// cannot change either half after the current set or preference has changed.
@@ -50,13 +51,22 @@ Future<ExercisePreference> applyPendingWeightSettings(
       token: current.token,
     ),
   );
-  await updateSetValues(
-    tx,
-    pendingSetId,
-    reading.kilograms,
-    pending.reps,
-    reading: reading,
-  );
+  final detail = await readSetDetail(tx, pendingSetId);
+  if (detail.firstCompletedAt != null) {
+    await writeSetDetail(
+      tx,
+      pendingSetId,
+      detail.copyWith(pendingReading: reading),
+    );
+  } else {
+    await updateSetValues(
+      tx,
+      pendingSetId,
+      reading.kilograms,
+      pending.reps,
+      reading: reading,
+    );
+  }
   encodeBackup(await readBackupSnapshot(tx, exportedAt: 0));
   return (await readExercisePreferences(tx, [exerciseId]))[exerciseId]!;
 });
