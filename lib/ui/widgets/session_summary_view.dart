@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/rest_advice.dart';
 import '../../domain/session_summary.dart';
+import '../../domain/types.dart';
 import '../theme.dart';
 import '../tokens.dart';
 import 'app_card.dart';
@@ -18,8 +19,9 @@ import 'stat_block.dart';
 /// 接「完成」按钮，两者得在同一个 ListView 里一起滚。
 class SessionSummaryView extends StatelessWidget {
   final SessionSummary summary;
+  final void Function(SetEntry set, String name, int index)? onEdit;
 
-  const SessionSummaryView({super.key, required this.summary});
+  const SessionSummaryView({super.key, required this.summary, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +86,8 @@ class SessionSummaryView extends StatelessWidget {
     final c = appColors(context);
     final reps = s.sets.map((e) => e.reps).toList();
     final rests = s.sets.map((e) => e.restSeconds).toList();
-    final feedback = buildRestFeedback(reps, rests);
+    final hasSegments = s.sets.any((s) => s.detail?.isRestPause == true);
+    final feedback = hasSegments ? null : buildRestFeedback(reps, rests);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -104,7 +107,14 @@ class SessionSummaryView extends StatelessWidget {
             // ⭐ 原始次数数组**必须原样显示** —— 只给结论不给原始数字，
             // 用户无法核对，也不会相信
             Text(
-              reps.join(' / '),
+              s.sets
+                  .map(
+                    (set) => [
+                      set.reps,
+                      ...?set.detail?.continuations.map((s) => s.reps),
+                    ].join('+'),
+                  )
+                  .join(' / '),
               style: TextStyle(
                 fontSize: AppFontSize.title,
                 color: c.textPrimary,
@@ -113,11 +123,21 @@ class SessionSummaryView extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
             for (final (index, set) in s.sets.indexed)
-              Text(
-                '第 ${index + 1} 组 · ${set.equipmentWeight.label} × ${set.reps}',
-                style: TextStyle(
-                  fontSize: AppFontSize.caption,
-                  color: c.textSecondary,
+              InkWell(
+                onTap: onEdit == null
+                    ? null
+                    : () => onEdit!(set, s.exerciseName, index),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    vertical: onEdit == null ? 0 : 10,
+                  ),
+                  child: Text(
+                    '第 ${index + 1} 组 · ${set.equipmentWeight.label} × ${set.reps}${set.detail?.effort == null ? '' : ' @ ${set.detail!.effort!.label}'}${set.detail?.continuations.isNotEmpty == true ? ' + ${set.detail!.segmentLabel}' : ''}${set.detail?.endedEarly == true ? ' · 提前结束' : ''}${set.detail?.role == 'warmup' ? ' · 热身' : ''}${onEdit == null ? '' : ' · 编辑'}${set.detail?.target == null ? '' : '\n原目标：${set.detail!.target!.label}'}',
+                    style: TextStyle(
+                      fontSize: AppFontSize.caption,
+                      color: c.textSecondary,
+                    ),
+                  ),
                 ),
               ),
             if (feedback != null) ...[
@@ -133,7 +153,7 @@ class SessionSummaryView extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               // 组数 < 3 时明确沉默，不硬给建议
               Text(
-                '组数不足 3 组，暂不判断',
+                hasSegments ? '分段记录按各段分别计算容量，停顿不计为连续次数。' : '组数不足 3 组，暂不判断',
                 style: TextStyle(
                   fontSize: AppFontSize.caption,
                   color: c.textTertiary,

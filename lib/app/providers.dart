@@ -6,7 +6,9 @@ import '../data/db/database.dart';
 import '../data/db/sql_executor.dart';
 import '../data/files/backup_file_store.dart';
 import '../data/repositories/exercise_repo.dart';
+import '../data/repositories/exercise_catalog_repo.dart';
 import '../data/repositories/settings_repo.dart';
+import '../domain/backup.dart';
 import '../state/active_session_controller.dart';
 import '../state/theme_controller.dart';
 import '../state/exercise_preferences_controller.dart';
@@ -43,6 +45,34 @@ class _AppBootstrapState extends State<AppBootstrap> {
   RecordManagementController? _records;
   final _revision = DataRevision();
   Object? _error;
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+
+  Future<String?> _syncCatalog(SqlExecutor exec) async {
+    try {
+      await syncExerciseCatalog(exec);
+      return null;
+    } on BackupValidationException {
+      return '动作库扩充达到容量上限，已有记录仍可使用；释放空间后重启重试。';
+    } catch (_) {
+      return '动作库扩充暂未完成，已有记录仍可使用；重启后重试。';
+    }
+  }
+
+  void _showCatalogNotice(String? message) {
+    if (message == null) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _messengerKey.currentState?.showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      }
+    });
+  }
 
   /// **router 只建一次。** 写在 `build()` 里的话每次重建都会新建一个
   /// `GoRouter`，导航栈会被整个丢掉。
@@ -58,6 +88,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
     try {
       final exec = await (widget.openDatabase ?? openAppDatabase)();
       await seedExercisesIfEmpty(exec);
+      final catalogNotice = await _syncCatalog(exec);
 
       final theme = ThemeController(exec);
       await theme.load(); // 不放行子树直到它完成 —— 否则每次启动闪一帧
@@ -71,11 +102,13 @@ class _AppBootstrapState extends State<AppBootstrap> {
         files: widget.backupFiles ?? PlatformBackupFileStore(),
         beforeRestore: session.prepareForRestore,
         onRestored: () async {
+          final catalogNotice = await _syncCatalog(exec);
           _revision.changed();
           session.reset();
           await session.resume();
           await theme.load();
           _router.go('/');
+          _showCatalogNotice(catalogNotice);
         },
       );
 
@@ -107,6 +140,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
           onChanged: _revision.changed,
         );
       });
+      _showCatalogNotice(catalogNotice);
     } catch (e) {
       if (mounted) setState(() => _error = e);
     }
@@ -155,7 +189,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
         ),
       ],
       // 在 Provider 之下读主题，所以这一层必须是独立 widget
-      child: _ThemedApp(router: _router),
+      child: _ThemedApp(router: _router, messengerKey: _messengerKey),
     );
   }
 
@@ -177,14 +211,16 @@ class _AppBootstrapState extends State<AppBootstrap> {
 /// 把 [ThemeController] 的三态偏好接到 `MaterialApp.themeMode` 上。
 class _ThemedApp extends StatelessWidget {
   final GoRouter router;
+  final GlobalKey<ScaffoldMessengerState> messengerKey;
 
-  const _ThemedApp({required this.router});
+  const _ThemedApp({required this.router, required this.messengerKey});
 
   @override
   Widget build(BuildContext context) {
     final mode = context.watch<ThemeController>().mode;
     return MaterialApp.router(
       title: '健身记录',
+      scaffoldMessengerKey: messengerKey,
       debugShowCheckedModeBanner: false,
       theme: buildTheme(AppColors.light),
       darkTheme: buildTheme(AppColors.dark),

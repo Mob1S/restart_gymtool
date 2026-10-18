@@ -161,7 +161,7 @@ class ImportPreviewView extends StatelessWidget {
               '${draft.parsed.workouts[i].name ?? '训练'} · ${formatDateTime(draft.parsed.workouts[i].startedAt)}',
             ),
             subtitle: Text(
-              '${draft.duplicates.contains(i) ? '疑似重复，默认不追加\n' : ''}${draft.parsed.workouts[i].exercises.map((e) => '${e.name} ${e.sets.length} 组').join('、')}\n${draft.parsed.workouts[i].exercises.map((e) => e.sets.map((s) => '${s.weight.toStringAsFixed(2)} kg × ${s.reps}').join(' / ')).join('\n')}',
+              '${draft.duplicates.contains(i) ? '疑似重复，默认不追加\n' : ''}${draft.parsed.workouts[i].exercises.map((e) => '${e.name} ${e.sets.length} 组').join('、')}\n${draft.parsed.workouts[i].exercises.map((e) => e.sets.map((s) => '${s.equipmentWeight.label} × ${s.reps}${s.detail?.effort == null ? '' : ' @ ${s.detail!.effort!.label}'}${s.detail?.continuations.isNotEmpty == true ? ' + ${s.detail!.segmentLabel}' : ''}').join(' / ')).join('\n')}',
             ),
             onChanged: c.busy
                 ? null

@@ -14,6 +14,7 @@ import '../../domain/local_date.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
 import '../../ui/widgets/session_summary_view.dart';
+import '../workout/edit_set_sheet.dart';
 
 /// 历史详情：翻一场旧账。
 ///
@@ -109,7 +110,19 @@ class _SessionDetailPageState extends State<SessionDetailPage>
             padding: const EdgeInsets.only(bottom: 16),
             child: Text(summary.session.note!),
           ),
-        SessionSummaryView(summary: summary),
+        SessionSummaryView(
+          summary: summary,
+          onEdit: (set, name, index) async {
+            await showHistoricalSetEditor(
+              context,
+              widget.sessionId,
+              set.id,
+              name,
+              index + 1,
+            );
+            if (mounted) await _load();
+          },
+        ),
       ],
     );
   }

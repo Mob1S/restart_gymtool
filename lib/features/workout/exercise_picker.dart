@@ -6,6 +6,7 @@ import '../../data/repositories/exercise_picker_repo.dart';
 import '../../data/repositories/exercise_preferences_repo.dart';
 import '../../domain/exercise_preferences.dart';
 import '../../domain/types.dart';
+import '../../domain/exercise_catalog.dart';
 import '../../state/data_revision.dart';
 import '../../state/exercise_preferences_controller.dart';
 import '../../domain/workout_edit.dart';
@@ -148,7 +149,7 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
       final groups = <String, List<Exercise>>{};
       if (_query.isNotEmpty || !_frequent) {
         for (final e in data.all.where(
-          (e) => e.name.toLowerCase().contains(_query.toLowerCase()),
+          (e) => matchesExerciseQuery(e, _query),
         )) {
           groups.putIfAbsent(e.muscleGroup ?? '其他', () => []).add(e);
         }

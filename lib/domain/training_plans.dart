@@ -21,13 +21,18 @@ class TrainingDayDraft {
   final String? id;
   final String name;
   final List<String> exerciseIds;
+  final List<String?>? occurrenceIds;
   final TrainingDayKind kind;
   TrainingDayDraft({
     this.id,
     this.kind = TrainingDayKind.training,
     required this.name,
     required List<String> exerciseIds,
-  }) : exerciseIds = List.unmodifiable(exerciseIds);
+    List<String?>? occurrenceIds,
+  }) : exerciseIds = List.unmodifiable(exerciseIds),
+       occurrenceIds = occurrenceIds == null
+           ? null
+           : List.unmodifiable(occurrenceIds);
 }
 
 class TrainingDay {
@@ -48,6 +53,7 @@ class TrainingDay {
     name: name,
     kind: kind,
     exerciseIds: exerciseIds,
+    occurrenceIds: occurrenceIds,
   );
 }
 

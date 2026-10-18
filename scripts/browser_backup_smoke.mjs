@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const webRoot = path.join(root, 'build', 'web');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const feature = process.env.GYM_BROWSER_FEATURE;
-assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign', 'rest_days'].includes(feature));
+assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign', 'rest_days', 'builtin_programs'].includes(feature));
 const output = path.join(root, 'build', 'acceptance', `browser-${feature || 'backup'}-${stamp}`);
 const chromePath = process.env.CHROME_EXECUTABLE || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -86,9 +86,9 @@ async function evaluate(expression) {
 }
 const semanticsExpression = `Array.from(document.querySelectorAll('flt-semantics')).map(e => {
   const r = e.getBoundingClientRect();
-  const slider = e.querySelector('input[type=range]');
+  const slider = Array.from(e.querySelectorAll('input[type=range]')).find(i=>i.closest('flt-semantics')===e);
   const editable = Array.from(e.querySelectorAll('input:not([type=range]),textarea')).find(i=>i.closest('flt-semantics')===e);
-  return {id:e.id, text: e.getAttribute('aria-label') || Array.from(e.querySelectorAll('input,textarea')).map(i=>i.getAttribute('aria-label') || i.placeholder || '').filter(Boolean).join('\\n') || e.innerText || '', role: e.getAttribute('role') || slider?.getAttribute('role') || (editable ? 'textbox' : null), value: e.getAttribute('aria-valuetext') || slider?.getAttribute('aria-valuetext') || '', disabled: e.getAttribute('aria-disabled') === 'true',
+  return {id:e.id, text: e.getAttribute('aria-label') || Array.from(e.querySelectorAll('input,textarea')).map(i=>i.getAttribute('aria-label') || i.placeholder || '').filter(Boolean).join('\\n') || e.innerText || '', role: e.getAttribute('role') || slider?.getAttribute('role') || (editable ? 'textbox' : null), value: e.getAttribute('aria-valuetext') || slider?.getAttribute('aria-valuetext') || e.getAttribute('aria-valuenow') || slider?.getAttribute('aria-valuenow') || '', disabled: e.getAttribute('aria-disabled') === 'true',
     x: r.x, y: r.y, width: r.width, height: r.height};
 }).filter(e => e.width && e.height)`;
 async function semantics() {
@@ -278,7 +278,7 @@ try {
     await clickText('设置', true); await clickText('深色', true);
     baseline = await exportFile('01-original-backup');
     assert.equal(baseline.data.format, 'gym-tracker-backup');
-    assert.equal(baseline.data.version, 5); assert.equal(baseline.data.schemaVersion, 7);
+    assert.equal(baseline.data.version, 6); assert.equal(baseline.data.schemaVersion, 8);
     assert.equal(baseline.data.data.sessions.length, 1);
     assert.equal(baseline.data.data.sets[0].weight, 20); assert.equal(baseline.data.data.sets[0].reps, 8);
     assert(baseline.data.data.settings.some(row => row.key === 'theme_mode' && row.value === 'dark'));

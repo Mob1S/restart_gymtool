@@ -49,18 +49,27 @@ Future<LoadReference> readLoadReference(
     [exerciseId, now, now - 90 * 86400000],
   );
   final history = <LoadObservation>[];
+  final segmentIndex = detail.currentSegment;
   for (final f in facts) {
     final sid = f['sid'] as String;
     final s = toSetEntry(SetRow.fromMap(f));
     final d = s.detail;
+    if (target.isRestPause && segmentIndex > (d?.continuations.length ?? 0)) {
+      continue;
+    }
+    final part = target.isRestPause && segmentIndex > 0
+        ? d!.continuations[segmentIndex - 1]
+        : null;
     history.add(
       LoadObservation(
         sessionId: sid,
         setId: s.id,
         at: f['started_at'] as int,
-        reps: s.reps,
-        reading: s.equipmentWeight,
-        effort: d?.effort,
+        reps: part?.reps ?? s.reps,
+        reading: part?.reading ?? s.equipmentWeight,
+        effort: part?.effort ?? (part == null ? d?.effort : null),
+        firstReps: s.reps,
+        segmentIndex: segmentIndex,
         warmup: d?.role == 'warmup',
         pattern: d?.isRestPause == true
             ? (d!.continuations.isEmpty
@@ -93,6 +102,7 @@ Future<LoadReference> readLoadReference(
     step: prefs.weightUnit == WeightUnit.kg ? prefs.kgStep : prefs.lbStep,
     now: now,
     loadMeaning: meaning,
+    segmentIndex: segmentIndex,
   );
   return result.withToken(
     jsonEncode([row, detail.toJson(), prefs.token, facts, now ~/ 86400000]),

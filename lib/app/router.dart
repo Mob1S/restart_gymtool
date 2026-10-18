@@ -12,6 +12,8 @@ import 'app_shell.dart';
 import '../features/import/import_page.dart';
 import '../features/plans/plan_list_page.dart';
 import '../features/plans/plan_editor_page.dart';
+import '../features/plans/builtin_plan_page.dart';
+import '../features/plans/program_editor.dart';
 import '../domain/local_date.dart';
 
 /// 路由表。
@@ -22,6 +24,11 @@ GoRouter buildRouter() => GoRouter(
   initialLocation: '/',
   routes: [
     GoRoute(path: '/plans', builder: (_, _) => const PlanListPage()),
+    GoRoute(path: '/plans/builtin', builder: (_, _) => const BuiltinPlanPage()),
+    GoRoute(
+      path: '/plans/:id/program',
+      builder: (_, s) => ProgramEditor(planId: s.pathParameters['id']!),
+    ),
     GoRoute(path: '/plans/new', builder: (_, _) => const PlanEditorPage()),
     GoRoute(
       path: '/plans/:id/edit',

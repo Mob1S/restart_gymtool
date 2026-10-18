@@ -230,6 +230,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
           if (!bootstrapBackup.busy &&
               !session.loading &&
+              find.byType(AlertDialog).evaluate().isEmpty &&
               find.byType(WorkoutHomePage).evaluate().isNotEmpty) {
             return;
           }

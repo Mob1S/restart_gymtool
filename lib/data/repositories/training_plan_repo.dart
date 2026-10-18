@@ -184,12 +184,34 @@ Future<TrainingPlanDetail> writeTrainingPlan(
       );
     }
     final queues = <String, List<String>>{};
+    if (day.occurrenceIds != null &&
+        day.occurrenceIds!.length != day.exerciseIds.length) {
+      throw const PlanValidationException('动作位置列表无效');
+    }
     for (final item in oldDetails[dayId]?.exercises ?? <TemplateItem>[]) {
       queues.putIfAbsent(item.entry.exerciseId, () => []).add(item.entry.id);
     }
     for (var index = 0; index < day.exerciseIds.length; index++) {
       final exerciseId = day.exerciseIds[index];
       final queue = queues[exerciseId];
+      if (day.occurrenceIds != null) {
+        final occurrenceId = day.occurrenceIds![index];
+        if (occurrenceId == null) {
+          await tx.run(
+            'INSERT INTO template_exercise(id,template_id,exercise_id,position) VALUES(?,?,?,?)',
+            [newId(), dayId, exerciseId, index],
+          );
+        } else {
+          if (queue == null || !queue.remove(occurrenceId)) {
+            throw const PlanValidationException('动作出现位置已变化，请重新载入');
+          }
+          await tx.run('UPDATE template_exercise SET position=? WHERE id=?', [
+            index,
+            occurrenceId,
+          ]);
+        }
+        continue;
+      }
       if (queue != null && queue.isNotEmpty) {
         await tx.run('UPDATE template_exercise SET position=? WHERE id=?', [
           index,

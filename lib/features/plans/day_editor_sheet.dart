@@ -28,6 +28,7 @@ class _DayEditor extends StatefulWidget {
 class _DayEditorState extends State<_DayEditor> {
   late final TextEditingController _name;
   late List<String> _ids;
+  late List<String?> _occurrenceIds;
   late TrainingDayKind _kind;
   Map<String, String> _names = {};
   bool _dirty = false, _allowClose = false;
@@ -40,6 +41,9 @@ class _DayEditorState extends State<_DayEditor> {
       text: widget.day?.name ?? (_kind == TrainingDayKind.rest ? '休息' : ''),
     );
     _ids = [...?widget.day?.exerciseIds];
+    _occurrenceIds = [
+      ...widget.day?.occurrenceIds ?? List<String?>.filled(_ids.length, null),
+    ];
     _loadNames();
   }
 
@@ -115,6 +119,7 @@ class _DayEditorState extends State<_DayEditor> {
     setState(() {
       _kind = kind;
       if (kind == TrainingDayKind.rest) _ids = [];
+      if (kind == TrainingDayKind.rest) _occurrenceIds = [];
       _dirty = true;
     });
   }
@@ -171,6 +176,7 @@ class _DayEditorState extends State<_DayEditor> {
                             kind: _kind,
                             name: _name.text.trim(),
                             exerciseIds: _ids,
+                            occurrenceIds: _occurrenceIds,
                           ),
                         );
                       },
@@ -243,6 +249,10 @@ class _DayEditorState extends State<_DayEditor> {
                                       ? null
                                       : () => setState(() {
                                           _ids.insert(i - 1, _ids.removeAt(i));
+                                          _occurrenceIds.insert(
+                                            i - 1,
+                                            _occurrenceIds.removeAt(i),
+                                          );
                                           _dirty = true;
                                         }),
                                   icon: const Icon(Icons.arrow_upward),
@@ -253,6 +263,10 @@ class _DayEditorState extends State<_DayEditor> {
                                       ? null
                                       : () => setState(() {
                                           _ids.insert(i + 1, _ids.removeAt(i));
+                                          _occurrenceIds.insert(
+                                            i + 1,
+                                            _occurrenceIds.removeAt(i),
+                                          );
                                           _dirty = true;
                                         }),
                                   icon: const Icon(Icons.arrow_downward),
@@ -261,6 +275,7 @@ class _DayEditorState extends State<_DayEditor> {
                                   tooltip: '移除训练日动作',
                                   onPressed: () => setState(() {
                                     _ids.removeAt(i);
+                                    _occurrenceIds.removeAt(i);
                                     _dirty = true;
                                   }),
                                   icon: const Icon(Icons.close),
@@ -278,6 +293,9 @@ class _DayEditorState extends State<_DayEditor> {
                         }
                         setState(() {
                           _ids.addAll(selected.map((e) => e.id));
+                          _occurrenceIds.addAll(
+                            List<String?>.filled(selected.length, null),
+                          );
                           for (final e in selected) {
                             _names[e.id] = e.name;
                           }

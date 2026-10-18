@@ -12,6 +12,8 @@ class LoadObservation {
   final bool warmup;
   final List<int> pattern;
   final int pauseSeconds;
+  final int segmentIndex;
+  final int? firstReps;
   const LoadObservation({
     required this.sessionId,
     required this.setId,
@@ -22,9 +24,11 @@ class LoadObservation {
     this.warmup = false,
     this.pattern = const [],
     this.pauseSeconds = 0,
+    this.segmentIndex = 0,
+    this.firstReps,
   });
   String get evidence =>
-      '${DateTime.fromMillisecondsSinceEpoch(at).toLocal().toIso8601String().substring(0, 10)} · ${reading.label} × $reps${pattern.isEmpty ? '' : ' + ${pattern.join('+')}'}${effort == null ? '' : ' @ ${effort!.label}'}';
+      '${DateTime.fromMillisecondsSinceEpoch(at).toLocal().toIso8601String().substring(0, 10)} · ${pattern.isEmpty ? '' : '第 ${segmentIndex + 1} 段 · '}${reading.label} × $reps${pattern.isEmpty ? '' : ' · 模式 ${firstReps ?? reps}+${pattern.join('+')}'}${effort == null ? '' : ' @ ${effort!.label}'}';
 }
 
 class LoadReference {
@@ -72,6 +76,7 @@ LoadReference suggestLoad({
   required DecimalReading step,
   required int now,
   String loadMeaning = 'external',
+  int segmentIndex = 0,
 }) {
   if (loadMeaning != 'external') {
     final recent =
@@ -117,10 +122,11 @@ LoadReference suggestLoad({
     final known = h.effort?.reserveLowerBound;
     double? value;
     if (target.isRestPause) {
-      if (h.pattern.join(',') == target.extraReps.join(',') &&
+      if (h.segmentIndex == segmentIndex &&
+          h.pattern.join(',') == target.extraReps.join(',') &&
           h.pauseSeconds == target.pauseSeconds &&
-          h.reps >= target.repsMin &&
-          h.reps <= target.repsMax) {
+          (h.firstReps ?? h.reps) >= target.repsMin &&
+          (h.firstReps ?? h.reps) <= target.repsMax) {
         value = h.reading.kilograms;
       }
     } else if (h.pattern.isEmpty) {
@@ -180,7 +186,7 @@ LoadReference suggestLoad({
   }
   bySession.sort((a, b) => b.$1.at.compareTo(a.$1.at));
   final points = bySession.take(8).toList();
-  final evidence = points.take(3).map((c) => c.$1.evidence).toList();
+  final evidence = points.map((c) => c.$1.evidence).toList();
   if (now - points.first.$1.at > 28 * 86400000) {
     return LoadReference(message: '久未训练：以下是历史表现，请重新评估当前重量', evidence: evidence);
   }
@@ -196,6 +202,7 @@ LoadReference suggestLoad({
         ? '近期回落'
         : '近期稳定';
     increase =
+        !target.isRestPause &&
         ratio > 1.03 &&
         points
             .take(2)

@@ -89,7 +89,7 @@ export async function run(h) {
     await clickText('结束训练');
     await expectText('50 lb');await clickText('完成',true);
     const backup=await h.exportFile('native-pounds');
-    assert.equal(backup.data.version,5);assert.equal(backup.data.schemaVersion,7);
+    assert.equal(backup.data.version,6);assert.equal(backup.data.schemaVersion,8);
     const set=backup.data.data.sets.find(s=>s.isCompleted);
     assert.equal(set.sourceWeight,'50');assert.equal(set.sourceUnit,'lb');assert.equal(set.weight,22.6796185);
   });

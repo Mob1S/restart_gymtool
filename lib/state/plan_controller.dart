@@ -103,6 +103,7 @@ class PlanController extends ChangeNotifier {
       name: day.name,
       kind: day.kind,
       exerciseIds: day.exerciseIds,
+      occurrenceIds: day.occurrenceIds,
     );
     _edit(d.name, days);
   }

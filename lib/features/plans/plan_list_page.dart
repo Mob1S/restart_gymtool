@@ -70,6 +70,14 @@ class _PlanListPageState extends State<PlanListPage> {
         padding: const EdgeInsets.all(16),
         children: [
           const Text('自由安排训练和休息的顺序。训练后进入下一项，休息按自然日推进。'),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: OutlinedButton.icon(
+              onPressed: c.busy ? null : () => _edit('/plans/builtin'),
+              icon: const Icon(Icons.library_books_outlined),
+              label: const Text('内置计划'),
+            ),
+          ),
           if (c.busy) const LinearProgressIndicator(),
           if (c.message != null) Text(c.message!),
           if (c.plans.isEmpty && !c.busy)
@@ -93,6 +101,12 @@ class _PlanListPageState extends State<PlanListPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
+                      TextButton(
+                        onPressed: c.busy
+                            ? null
+                            : () => _edit('/plans/${c.plans[i].id}/program'),
+                        child: const Text('组次与阶段'),
+                      ),
                       IconButton(
                         tooltip: '上移计划',
                         onPressed: c.busy || i == 0

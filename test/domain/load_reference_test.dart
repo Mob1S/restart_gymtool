@@ -4,6 +4,36 @@ import 'package:gym_tracker/domain/training_prescription.dart';
 import 'package:gym_tracker/domain/weight_value.dart';
 
 void main() {
+  test('rest-pause references use the selected segment reading and never infer a continuous RM', () {
+    final target = SetTarget(
+      repsMin: 10,
+      repsMax: 10,
+      extraReps: [5],
+      pauseSeconds: 5,
+    );
+    final result = suggestLoad(
+      history: [
+        LoadObservation(
+          sessionId: 's',
+          setId: 'g',
+          at: 1000,
+          reps: 5,
+          firstReps: 10,
+          segmentIndex: 1,
+          reading: EquipmentWeight.kg(25),
+          pattern: [5],
+          pauseSeconds: 5,
+        ),
+      ],
+      target: target,
+      segmentIndex: 1,
+      unit: WeightUnit.kg,
+      step: DecimalReading.parse('2.5'),
+      now: 2000,
+    );
+    expect(result.reading!.kilograms, 25);
+    expect(result.evidence.single, contains('第 2 段'));
+  });
   test(
     'high RM direct evidence stays independent of prescribed work repetitions',
     () {

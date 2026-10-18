@@ -67,17 +67,20 @@ class ActiveExercise {
 
   /// 该动作的全部组，含界面上那条未完成的占位组
   final List<SetEntry> sets;
+  final SessionPrescription? prescription;
 
   const ActiveExercise({
     required this.sessionExercise,
     required this.exerciseName,
     required this.sets,
+    this.prescription,
   });
 
   ActiveExercise copyWith({List<SetEntry>? sets}) => ActiveExercise(
     sessionExercise: sessionExercise,
     exerciseName: exerciseName,
     sets: sets ?? this.sets,
+    prescription: prescription,
   );
 
   /// 给 `domain/session_label.dart` 用 —— 它只认动作名与每组的完成状态。
@@ -533,21 +536,21 @@ class ActiveSessionController extends ChangeNotifier {
     await completeCurrentReading(EquipmentWeight.kg(weight), reps);
   }
 
-  Future<void> completeCurrentReading(
+  Future<WorkoutWriteResult> completeCurrentReading(
     EquipmentWeight reading,
     int reps, {
     Effort? effort,
   }) async {
-    if (writing && !savingWeight) return;
-    if (!await _flushReady() || writing) return;
+    if (writing && !savingWeight) return WorkoutWriteResult.busy;
+    if (!await _flushReady() || writing) return WorkoutWriteResult.failed;
     final current = session;
     final pending = currentExercise?.sets
         .where((s) => !s.isCompleted)
         .firstOrNull;
     if (current == null || current.finishedAt != null || pending == null) {
-      return;
+      return WorkoutWriteResult.conflict;
     }
-    await _write(
+    return _write(
       () => completeWorkoutSet(
         _exec,
         sessionId: current.id,
@@ -690,6 +693,7 @@ class ActiveSessionController extends ChangeNotifier {
           sessionExercise: se,
           exerciseName: exercise?.name ?? '未知动作',
           sets: sets,
+          prescription: await readSessionPrescription(_exec, se.id),
         ),
       );
     }

@@ -5,6 +5,9 @@ import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../domain/types.dart';
+import '../../domain/training_prescription.dart';
+import 'effort_input.dart';
+import 'prescription_panel.dart';
 import '../../domain/weight_value.dart';
 import '../../domain/workout_edit.dart';
 import '../../state/exercise_preferences_controller.dart';
@@ -43,6 +46,7 @@ class _RecordPageState extends State<RecordPage> {
   /// 拖动过程中不该每一帧都写库，**只有点「完成这组」才落盘**。
   EquipmentWeight? _weight;
   int? _reps;
+  Effort? _effort;
   bool _ready = false;
   bool _gestureActive = false;
   bool _settingsOpen = false;
@@ -89,7 +93,8 @@ class _RecordPageState extends State<RecordPage> {
     }
     setState(() {
       _weight = pending.equipmentWeight;
-      _reps = pending.reps;
+      _reps = pending.pendingReps;
+      _effort = null;
     });
   }
 
@@ -110,12 +115,21 @@ class _RecordPageState extends State<RecordPage> {
 
     // 一次轻微震动，**让用户不用盯着屏幕确认**（规格 §6.1）
     if (c.writing || _interactionLocked) return;
-    await c.completeCurrentReading(weight, reps);
+    final originalPending = _pendingOf(c)?.id;
+    final result = await c.completeCurrentReading(
+      weight,
+      reps,
+      effort: _effort,
+    );
     if (c.writeMessage == null &&
         c.currentExercise?.sets.any((s) => s.restStartedAt != null) == true) {
       await HapticFeedback.lightImpact();
     }
-    _syncFromPending(c);
+    if (result == WorkoutWriteResult.saved ||
+        result == WorkoutWriteResult.savedNeedsReload ||
+        _pendingOf(c)?.id != originalPending) {
+      _syncFromPending(c);
+    }
   }
 
   Future<void> _beginNextSet(ActiveSessionController c) async {
@@ -183,6 +197,7 @@ class _RecordPageState extends State<RecordPage> {
                   ? pending.equipmentWeight
                   : _weight ?? pending.equipmentWeight);
     final reps = _reps;
+    final effort = _effort;
     setState(() => _settingsOpen = true);
     try {
       final flushed = await c.flushPendingWeight();
@@ -203,7 +218,12 @@ class _RecordPageState extends State<RecordPage> {
       if (result == WorkoutWriteResult.saved && mounted) {
         await c.resume();
         _syncFromPending(c);
-        if (mounted) setState(() => _reps = reps);
+        if (mounted) {
+          setState(() {
+            _reps = reps;
+            _effort = effort;
+          });
+        }
       }
     } finally {
       if (mounted) setState(() => _settingsOpen = false);
@@ -404,7 +424,8 @@ class _RecordPageState extends State<RecordPage> {
         ? preference?.kgStep ?? DecimalReading.parse('2.5')
         : preference?.lbStep ?? DecimalReading.parse('5');
     final note = preference?.equipmentNote ?? '';
-    final total = active.sets.length;
+    final planned = active.prescription?.targets.length ?? 0;
+    final total = planned > active.sets.length ? planned : active.sets.length;
     final completed = active.sets.where((s) => s.isCompleted).length;
     final resting = _firstOrNull(
       active.sets.where((s) => s.isCompleted && s.restStartedAt != null),
@@ -485,83 +506,139 @@ class _RecordPageState extends State<RecordPage> {
     final pending = _pendingOf(c);
     final weight =
         _weight ?? pending?.equipmentWeight ?? EquipmentWeight.kg(20);
-    final reps = _reps ?? pending?.reps ?? 8;
+    final reps = _reps ?? pending?.pendingReps ?? 8;
 
     // 窄屏 / 横屏下这一列会比一屏高（320×480 实测溢出 59px，切掉的正好是
     // 底部那个「完成这组」）。装得下时布局与从前完全一致，见 FillOrScroll。
-    return FillOrScroll(
-      child: Column(
-        children: [
-          const SizedBox(height: AppSpacing.lg),
+    return Column(
+      children: [
+        Expanded(
+          child: FillOrScroll(
+            child: Column(
+              children: [
+                const SizedBox(height: AppSpacing.lg),
 
-          Text(
-            active.exerciseName,
-            style: TextStyle(
-              fontSize: AppFontSize.title,
-              fontWeight: FontWeight.w600,
-              color: sc.textPrimary,
+                Text(
+                  active.exerciseName,
+                  style: TextStyle(
+                    fontSize: AppFontSize.title,
+                    fontWeight: FontWeight.w600,
+                    color: sc.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+
+                // 「第 N / M 组」——旧项目这里踩过「组数只是右上角小灰字，不显眼」，
+                // 所以它现在是动作名正下方的一等信息
+                Text(
+                  '第 ${completed + 1} / $total 组',
+                  style: TextStyle(
+                    fontSize: AppFontSize.caption,
+                    color: sc.textSecondary,
+                    fontFeatures: tabularNums,
+                  ),
+                ),
+
+                const SizedBox(height: AppSpacing.lg),
+                _lastPerformanceLine(active, sc),
+                EquipmentNote(note: note),
+
+                if (pending != null)
+                  PrescriptionPanel(
+                    key: ValueKey('target-${pending.id}'),
+                    pending: pending,
+                    snapshot: active.prescription,
+                    enabled: !_interactionLocked && !c.writing,
+                    onAdopt: (reference) async {
+                      final result = await c.adoptReference(
+                        pending.id,
+                        reference,
+                      );
+                      if (mounted &&
+                          (result == WorkoutWriteResult.saved ||
+                              result == WorkoutWriteResult.savedNeedsReload)) {
+                        final current = _pendingOf(c);
+                        if (current?.id == pending.id) {
+                          setState(() => _weight = current!.equipmentWeight);
+                        }
+                      }
+                    },
+                  ),
+                const Spacer(),
+
+                WorkoutValueInput(
+                  key: ValueKey(
+                    '${pending?.id}:${pending?.detail?.currentSegment ?? 0}',
+                  ),
+                  weight: weight,
+                  reps: reps,
+                  step: weight.unit == WeightUnit.kg
+                      ? preference?.kgStep ?? DecimalReading.parse('2.5')
+                      : preference?.lbStep ?? DecimalReading.parse('5'),
+                  enabled: !c.writing && !_settingsOpen,
+                  showKgEquivalent: preference?.showKgEquivalent ?? false,
+                  onWeightChanged: (value) {
+                    if (mounted) setState(() => _weight = value);
+                  },
+                  onRepsChanged: (value) {
+                    if (mounted) setState(() => _reps = value);
+                  },
+                  onGestureActiveChanged: (active) {
+                    if (mounted) setState(() => _gestureActive = active);
+                  },
+                ),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    TextButton(
+                      onPressed: _interactionLocked || c.writing
+                          ? null
+                          : () => _openSettings(c),
+                      child: Text('幅度 ${step.text} ${weight.unit.name} ▾'),
+                    ),
+                    EffortInput(
+                      value: _effort,
+                      segment: pending?.detail?.isRestPause == true,
+                      enabled: !_interactionLocked && !c.writing,
+                      onChanged: (value) => setState(() => _effort = value),
+                    ),
+                  ],
+                ),
+                if (pending?.detail?.firstCompletedAt != null)
+                  TextButton(
+                    onPressed: _interactionLocked || c.writing
+                        ? null
+                        : () async {
+                            await c.finishPartialGroup(pending!.id);
+                            _syncFromPending(c);
+                          },
+                    child: const Text('结束本组，保留已做分段'),
+                  ),
+
+                const Spacer(),
+              ],
             ),
           ),
-          const SizedBox(height: AppSpacing.xs),
-
-          // 「第 N / M 组」——旧项目这里踩过「组数只是右上角小灰字，不显眼」，
-          // 所以它现在是动作名正下方的一等信息
-          Text(
-            '第 ${completed + 1} / $total 组',
-            style: TextStyle(
-              fontSize: AppFontSize.caption,
-              color: sc.textSecondary,
-              fontFeatures: tabularNums,
-            ),
-          ),
-
-          const SizedBox(height: AppSpacing.lg),
-          _lastPerformanceLine(active, sc),
-          EquipmentNote(note: note),
-
-          const Spacer(),
-
-          WorkoutValueInput(
-            key: ValueKey(pending?.id),
-            weight: weight,
-            reps: reps,
-            step: weight.unit == WeightUnit.kg
-                ? preference?.kgStep ?? DecimalReading.parse('2.5')
-                : preference?.lbStep ?? DecimalReading.parse('5'),
-            enabled: !c.writing && !_settingsOpen,
-            showKgEquivalent: preference?.showKgEquivalent ?? false,
-            onWeightChanged: (value) {
-              if (mounted) setState(() => _weight = value);
-            },
-            onRepsChanged: (value) {
-              if (mounted) setState(() => _reps = value);
-            },
-            onGestureActiveChanged: (active) {
-              if (mounted) setState(() => _gestureActive = active);
-            },
-          ),
-          TextButton(
-            onPressed: _interactionLocked || c.writing
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
+          child: PrimaryButton(
+            label: pending?.detail?.intraRestStartedAt != null
+                ? '开始第 ${pending!.detail!.currentSegment + 1} 段'
+                : pending?.detail?.isRestPause == true
+                ? '✓ 完成第 ${pending!.detail!.currentSegment + 1} 段'
+                : '✓ 完成这组',
+            // 没有待完成的组时置灰 —— 那正是「点了没反应」的假死状态
+            onPressed: pending == null || _interactionLocked || c.writing
                 ? null
-                : () => _openSettings(c),
-            child: Text('幅度 ${step.text} ${weight.unit.name} ▾'),
+                : () => pending.detail?.intraRestStartedAt != null
+                      ? c.beginNextSegment(pending.id)
+                      : _complete(c),
           ),
-
-          const Spacer(),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
-            child: PrimaryButton(
-              label: '✓ 完成这组',
-              // 没有待完成的组时置灰 —— 那正是「点了没反应」的假死状态
-              onPressed: pending == null || _interactionLocked || c.writing
-                  ? null
-                  : () => _complete(c),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-        ],
-      ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+      ],
     );
   }
 

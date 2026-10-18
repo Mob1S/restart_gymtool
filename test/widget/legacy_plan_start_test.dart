@@ -48,6 +48,22 @@ void main() {
         ),
       );
       await settle(tester);
+      Future<void> waitFor(bool Function() ready) async {
+        for (var i = 0; i < 100; i++) {
+          if (ready()) return;
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        fail('The asynchronous workout transition did not finish');
+      }
+
+      await waitFor(() {
+        final button = find.widgetWithText(TextButton, '开始新训练').evaluate();
+        return button.isNotEmpty &&
+            (button.single.widget as TextButton).onPressed != null;
+      });
       Future<void> tap(String label) async {
         await tester.ensureVisible(find.text(label).first);
         await tester.tap(find.text(label).first);
@@ -55,8 +71,10 @@ void main() {
       }
 
       await tap('开始新训练');
+      await waitFor(() => find.text('上一场训练还没结束').evaluate().isNotEmpty);
       expect(find.text('上一场训练还没结束'), findsOneWidget);
       await tap('结束它，开始新的');
+      await waitFor(() => find.textContaining('完成这组').evaluate().isNotEmpty);
       expect(
         find.byType(RecordPage),
         findsOneWidget,
