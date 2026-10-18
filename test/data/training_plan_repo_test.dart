@@ -126,12 +126,16 @@ void main() {
       await complete('active-b', plan, plan.days[1].id, 200, active: true);
 
       // With no completion yet, even an ongoing second day must leave the
-      // recommendation at the first day. Removing the finished filter would
-      // incorrectly treat active-b as a completion and recommend the third.
-      expect(
-        (await loadNextWorkout(db, planId: plan.id)).templateId,
-        plan.days.first.id,
-      );
+      // recommendation at the first day, with a valid completed-date source.
+      String? recommendedId;
+      Object? selectionError;
+      try {
+        recommendedId = (await loadNextWorkout(db, planId: plan.id)).templateId;
+      } catch (error) {
+        selectionError = error;
+      }
+      expect(selectionError, isNull);
+      expect(recommendedId, plan.days.first.id);
 
       await complete('finished-a', plan, plan.days.first.id, 100);
       expect(

@@ -208,22 +208,20 @@ Future<void> activateTrainingPlan(
   String id, {
   required LocalDate today,
 }) => exec.transaction((tx) async {
-  final current = await readTrainingPlan(tx, id);
-  if (current == null || current.activatedOn != null) return;
   // A usable completion already anchors the cycle. The fallback date is
   // recorded only when leading rest or a missing completion needs it.
-  final latest = await tx.first<Map<String, Object?>>(
+  await tx.run(
+    'UPDATE training_plan SET activated_on=? WHERE id=? AND activated_on IS NULL '
+    'AND NOT EXISTS (SELECT 1 FROM split_template WHERE plan_id=? AND id=('
     'SELECT template_id FROM session WHERE plan_id=? '
     "AND finished_at IS NOT NULL AND origin IN ('live','legacy') "
-    'ORDER BY finished_at DESC,rowid DESC LIMIT 1',
-    [id],
+    'ORDER BY finished_at DESC,rowid DESC LIMIT 1))',
+    [today.key, id, id, id],
   );
-  if (current.days.any((day) => day.id == latest?['template_id'])) return;
-  await tx.run(
-    'UPDATE training_plan SET activated_on=? WHERE id=? AND activated_on IS NULL',
-    [today.key, id],
-  );
-  encodeBackup(await readBackupSnapshot(tx, exportedAt: 0));
+  final changed = await tx.first<Map<String, Object?>>('SELECT changes() AS n');
+  if (changed!['n'] != 0) {
+    encodeBackup(await readBackupSnapshot(tx, exportedAt: 0));
+  }
 });
 
 Future<void> deleteTrainingPlan(

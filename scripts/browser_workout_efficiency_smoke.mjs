@@ -162,18 +162,18 @@ export async function run(h) {
     await clickAt(primary.x+primary.width/2,primary.y+primary.height/2);await expectText('下一组重量');
     await h.screenshot('11-landscape');
     await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
-    await clickText('Back');baseline=await h.exportFile('11-v4-baseline');
+    await clickText('Back');baseline=await h.exportFile('11-v5-baseline');
   });
-  await check('real v4 file restores into isolated origin and survives restart field-for-field',async()=>{
+  await check('real v5 file restores into isolated origin and survives restart field-for-field',async()=>{
     await send('Page.navigate',{url:h.origin.replace('127.0.0.1','localhost')});
     await h.restoreFile(baseline.file);
     assert.deepEqual((await h.exportFile('12-roundtrip')).data.data,baseline.data.data);
     await send('Page.reload');
     assert.deepEqual((await h.exportFile('13-reloaded')).data.data,baseline.data.data);
   });
-  await check('bad v4 refuses writes; legacy v1/v2 clear new preferences',async()=>{
+  await check('bad v5 refuses writes; legacy v1/v2 clear new preferences',async()=>{
     const bad=structuredClone(baseline.data);bad.data.exercisePreferences[0].exerciseId='missing';
-    const file=path.join(h.output,'bad-v4.json');await writeFile(file,JSON.stringify(bad));
+    const file=path.join(h.output,'bad-v5.json');await writeFile(file,JSON.stringify(bad));
     // Upload to the real restore picker and assert rejection without confirmation.
     await h.selectFile(file);await expectText('找不到对应');
     assert.deepEqual((await h.exportFile('14-bad-unchanged')).data.data,baseline.data.data);

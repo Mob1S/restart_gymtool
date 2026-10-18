@@ -11,6 +11,18 @@ const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const output = path.join(root, 'build', 'acceptance', `backup-mutations-${stamp}`);
 await mkdir(output, { recursive: true });
 const cases = [
+  { name: 'rest-day-kind', file: 'lib/domain/backup.dart',
+    before: "!{'training', 'rest'}.contains(row['kind'])",
+    after: 'false',
+    test: 'test/data/backup_v5_test.dart' },
+  { name: 'activation-civil-date', file: 'lib/domain/backup.dart',
+    before: "LocalDate.tryParse(row['activatedOn'] as String) == null",
+    after: 'false',
+    test: 'test/data/backup_v5_test.dart' },
+  { name: 'rest-day-exercises', file: 'lib/domain/backup.dart',
+    before: "templates[row['templateId']]!['kind'] == 'rest'",
+    after: 'false',
+    test: 'test/data/backup_v5_test.dart' },
   { name: 'native-weight-consistency', file: 'lib/domain/backup.dart',
     before: 'if ((reading.kilograms - weight).abs() > tolerance)',
     after: 'if (false)',

@@ -57,7 +57,15 @@ void main() {
       await tap('开始新训练');
       expect(find.text('上一场训练还没结束'), findsOneWidget);
       await tap('结束它，开始新的');
-      expect(find.byType(RecordPage), findsOneWidget);
+      expect(
+        find.byType(RecordPage),
+        findsOneWidget,
+        reason: find
+            .byType(Text)
+            .evaluate()
+            .map((e) => (e.widget as Text).data)
+            .join(' | '),
+      );
       expect(find.text('推日'), findsOneWidget);
       expect(find.text('我的推胸'), findsWidgets);
       expect(find.textContaining('完成这组'), findsOneWidget);

@@ -39,6 +39,8 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
   Timer? _midnight;
   LocalDate? _lastDate;
   DateTime get _now => widget.now?.call() ?? DateTime.now();
+  bool get _homeVisible =>
+      (GoRouter.maybeOf(context)?.state.uri.path ?? '/') == '/';
   PlannedWorkout? _planned;
   List<TrainingPlanDetail> _plans = [];
   Map<String, String> _exerciseNames = {};
@@ -50,19 +52,25 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   Set<String> _completed = {};
   final _topKey = GlobalKey(),
+      _actionKey = GlobalKey(),
       _detailsKey = GlobalKey(),
       _cardKey = GlobalKey();
-  Size? _topSize, _detailsSize, _cardSize;
+  Size? _topSize, _actionSize, _detailsSize, _cardSize;
 
   void _measureLayout() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final top = _topKey.currentContext?.size;
+      final action = _actionKey.currentContext?.size;
       final details = _detailsKey.currentContext?.size;
       final card = _cardKey.currentContext?.size;
-      if (top != _topSize || details != _detailsSize || card != _cardSize) {
+      if (top != _topSize ||
+          action != _actionSize ||
+          details != _detailsSize ||
+          card != _cardSize) {
         setState(() {
           _topSize = top;
+          _actionSize = action;
           _detailsSize = details;
           _cardSize = card;
         });
@@ -159,7 +167,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
   }
 
   Future<void> _loadPlan() async {
-    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+    if (!mounted || !_homeVisible) return;
     final generation = ++_planGeneration;
     setState(() => _planLoading = true);
     final exec = context.read<SqlExecutor>();
@@ -186,9 +194,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
           )) {
         _preferredDayId = null;
       }
-      if (!_freeTraining &&
-          selected != null &&
-          ModalRoute.of(context)?.isCurrent != false) {
+      if (!_freeTraining && selected != null && _homeVisible) {
         await activateTrainingPlan(
           exec,
           selected,
@@ -444,9 +450,9 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
         scheduleState == TrainingScheduleState.rest ||
         scheduleState == TrainingScheduleState.completed;
     final button = !hasActive && resting
-        ? SizedBox(
+        ? ConstrainedBox(
             key: const ValueKey('home-primary-action'),
-            height: 56,
+            constraints: const BoxConstraints(minHeight: 56),
             child: Center(
               child: Text(
                 scheduleState == TrainingScheduleState.rest ? '今天休息' : '今日已完成',
@@ -465,6 +471,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
                 ? _continue
                 : _startNew,
           );
+    final action = SizedBox(key: _actionKey, child: button);
     final details = Column(
       key: _detailsKey,
       mainAxisSize: MainAxisSize.min,
@@ -509,15 +516,17 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
       builder: (context, constraints) {
         final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
         final contentHeight = constraints.maxHeight - 24;
+        final actionHalf = (_actionSize?.height ?? 56) / 2;
         // Measure the actual calendar, text and card. Long names, large text,
         // landscape and small displays use a reachable scrolling layout.
         final canCenter =
             _topSize != null &&
+            _actionSize != null &&
             _cardSize != null &&
             _detailsSize != null &&
-            _topSize!.height + 12 <= contentHeight / 2 - 28 &&
+            _topSize!.height + 12 <= contentHeight / 2 - actionHalf &&
             _cardSize!.height + 12 <=
-                contentHeight / 2 - 28 - _detailsSize!.height;
+                contentHeight / 2 - actionHalf - _detailsSize!.height;
         final top = Column(
           key: _topKey,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -543,12 +552,12 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
                     Positioned(top: 0, left: 0, right: 0, child: top),
                     // Button itself is centered, independent of the text below it.
                     Positioned(
-                      top: (constraints.maxHeight - 24) / 2 - 28,
+                      top: (constraints.maxHeight - 24) / 2 - actionHalf,
                       left: 0,
                       right: 0,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
-                        children: [button, details],
+                        children: [action, details],
                       ),
                     ),
                     Positioned(bottom: 0, left: 0, right: 0, child: card),
@@ -560,7 +569,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
                     children: [
                       top,
                       const SizedBox(height: 28),
-                      button,
+                      action,
                       details,
                       const SizedBox(height: 28),
                       card,

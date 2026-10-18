@@ -226,6 +226,13 @@ void main() {
       await t.runAsync(() => make(onlyRest: true));
       await boot(t, size: view.$1, scale: view.$2);
       expect(find.text('今天休息'), findsOneWidget);
+      if (view.$2 == 2.0) {
+        expect(
+          t.getSize(find.byKey(const ValueKey('home-primary-action'))).height,
+          greaterThan(56),
+          reason: 'Large rest status text must not be clipped',
+        );
+      }
       expect(find.textContaining('下一次：'), findsNothing);
       await t.ensureVisible(find.text('管理计划'));
       await settle(t);

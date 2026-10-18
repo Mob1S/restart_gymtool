@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const webRoot = path.join(root, 'build', 'web');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const feature = process.env.GYM_BROWSER_FEATURE;
-assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign'].includes(feature));
+assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign', 'rest_days'].includes(feature));
 const output = path.join(root, 'build', 'acceptance', `browser-${feature || 'backup'}-${stamp}`);
 const chromePath = process.env.CHROME_EXECUTABLE || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -201,7 +201,8 @@ async function restoreFile(file) {
   await selectFile(file);
   await expectText('替换并恢复');
   await clickText('替换并恢复', true);
-  await until(async () => (await has('开始训练')) || (await has('开始新训练')), 'restored workout home');
+  await until(async () => (await has('开始训练')) || (await has('开始新训练')) ||
+    (await has('继续训练')) || (await has('今天休息')) || (await has('今日已完成')), 'restored workout home');
 }
 let failed = false;
 try {
@@ -268,7 +269,7 @@ try {
   } else {
   let baseline;
   await check('create training via UI and download a real JSON file', async () => {
-    await clickText('开始训练'); await clickText('添加动作');
+    await tapText('开始训练'); await clickText('添加动作');
     await until(() => has('胸'), 'exercise picker data ready');
     await clickAt(100,166);
     await send('Input.insertText', { text: '深蹲' }); await clickText('深蹲');
@@ -277,7 +278,7 @@ try {
     await clickText('设置', true); await clickText('深色', true);
     baseline = await exportFile('01-original-backup');
     assert.equal(baseline.data.format, 'gym-tracker-backup');
-    assert.equal(baseline.data.version, 4); assert.equal(baseline.data.schemaVersion, 6);
+    assert.equal(baseline.data.version, 5); assert.equal(baseline.data.schemaVersion, 7);
     assert.equal(baseline.data.data.sessions.length, 1);
     assert.equal(baseline.data.data.sets[0].weight, 20); assert.equal(baseline.data.data.sets[0].reps, 8);
     assert(baseline.data.data.settings.some(row => row.key === 'theme_mode' && row.value === 'dark'));

@@ -39,7 +39,7 @@ export async function run(h) {
   }
   async function add(name, days) {
     await clickText('新建计划', true);
-    await expectText('还没有训练日');
+    await expectText('还没有配置周期');
     await enterField(name);
     for (const day of days) await addDay(day.name, day.repeat);
     await clickText('保存', true);
@@ -127,6 +127,7 @@ export async function run(h) {
     await send('Page.reload'); await expectText('继续训练'); await clickText('继续训练', true);
     await expectText('完成这组');
     await clickText('完成这组'); await clickText('移除当前动作'); await clickText('删掉这 1 组', true);
+    await h.until(async()=>!(await h.has('移除当前动作')), 'last visible exercise removes the removal action after its write completes');
     assert.equal(await h.has('移除当前动作'), false);
     await clickText('完成这组'); await screenshot('03-removal'); await clickText('Back');
     const { data } = await exportFile('06-removed-actions');
