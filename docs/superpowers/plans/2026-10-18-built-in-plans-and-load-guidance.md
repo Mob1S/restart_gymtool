@@ -138,4 +138,4 @@ expect(suggestLoad(poundsWithFiveLbStep).reading!.amount.asDouble % 5, 0);
 - [x] Run existing mutation checks where affected. Build `flutter build web --no-pub --no-wasm-dry-run`; run browser smoke against the built app with isolated browser data and desktop/mobile widths.
 - [x] Build release Android APK using existing offline Gradle command if Flutter's online wrapper stalls; record real build result and hash. Do not claim native acceptance without executing it.
 - [x] Update `CHANGELOG.md`, `README.md`, this checklist and an execution record with actual commands/results, then commit exact project changes.
-- [ ] `git diff --check`; verify working tree contains only pre-existing user untracked files. Normal push to `origin main`; verify remote HEAD equals local. No force push.
+- [x] `git diff --check`; verify working tree contains only pre-existing user untracked files. Normal push to `origin main`; verify remote HEAD equals local. No force push.
