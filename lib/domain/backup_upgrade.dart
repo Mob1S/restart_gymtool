@@ -5,7 +5,7 @@ import 'weight_value.dart';
 /// repeat previews identical; absent settings continue to mean “preserve local”.
 Map<String, Object?> upgradeBackupToV4(Map<String, Object?> root) {
   final source = validateBackup(root);
-  if (source.version == 4) return source.toJson();
+  if (source.version >= 4) return source.toJson();
   final data = <String, Object?>{
     for (final entry in source.data.entries)
       entry.key: [
@@ -82,5 +82,27 @@ Map<String, Object?> upgradeBackupToV4(Map<String, Object?> root) {
     'schemaVersion': 6,
     'exportedAt': source.exportedAt,
     'data': data,
+  }).toJson();
+}
+
+/// Legacy normalization remains independently available; current restores
+/// additionally fill rest-day fields without changing historical readings.
+Map<String, Object?> upgradeBackupToV5(Map<String, Object?> root) {
+  final source = validateBackup(upgradeBackupToV4(root));
+  if (source.version == 5) return source.toJson();
+  return validateBackup({
+    ...source.toJson(),
+    'version': 5,
+    'schemaVersion': 7,
+    'data': {
+      ...source.data,
+      'plans': [
+        for (final row in source.rows('plans')) {...row, 'activatedOn': null},
+      ],
+      'templates': [
+        for (final row in source.rows('templates'))
+          {...row, 'kind': 'training'},
+      ],
+    },
   }).toJson();
 }

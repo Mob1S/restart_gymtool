@@ -55,10 +55,17 @@ const List<Migration> migrations = [
   Migration(version: 4, statements: [createBackupPlansSql]),
   Migration(version: 5, statements: [createExercisePreferencesSql]),
   Migration(version: 6, statements: []),
+  Migration(
+    version: 7,
+    statements: [
+      "ALTER TABLE split_template ADD COLUMN kind TEXT NOT NULL DEFAULT 'training' CHECK(kind IN ('training','rest'))",
+      'ALTER TABLE training_plan ADD COLUMN activated_on TEXT',
+    ],
+  ),
 ];
 
 /// 当前库结构版本。必须与 [migrations] 的最后一项保持一致。
-const int schemaVersion = 6;
+const int schemaVersion = 7;
 
 /// 读出当前库结构版本。
 ///
@@ -87,6 +94,19 @@ Future<void> migrate(SqlExecutor exec) async {
     ..sort((a, b) => a.version - b.version);
 
   for (final migration in pending) {
+    if (migration.version == 7) {
+      await exec.transaction((tx) async {
+        for (final statement in migration.statements) {
+          await tx.run(statement);
+        }
+        await tx.run(
+          "INSERT INTO app_meta(key,value) VALUES('schema_version',?) "
+          'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+          ['7'],
+        );
+      });
+      continue;
+    }
     if (migration.version == 6) {
       await exec.transaction((tx) async {
         await migrateTrainingV6(tx);

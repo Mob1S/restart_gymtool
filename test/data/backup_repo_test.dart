@@ -48,7 +48,7 @@ void main() {
     final incoming = loadFixture();
     await restore(incoming);
     final exported = await exportBackup(exec, exportedAt: 123);
-    final upgraded = validateBackup(upgradeBackupToV4(incoming.toJson()));
+    final upgraded = validateBackup(upgradeBackupToV5(incoming.toJson()));
     for (final key in upgraded.data.keys) {
       expect(exported.rows(key), upgraded.rows(key), reason: key);
     }
@@ -61,7 +61,7 @@ void main() {
       (await exec.first<Map<String, Object?>>(
         "SELECT value FROM app_meta WHERE key='schema_version'",
       ))!['value'],
-      '6',
+      '7',
     );
   });
   test(

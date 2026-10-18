@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../domain/plans.dart';
+import '../../domain/training_plans.dart';
 import '../../domain/backup_codec.dart';
 import '../db/sql_executor.dart';
 import '../db/training_v6_migration.dart';
@@ -12,6 +13,7 @@ SplitTemplate _template(Map<String, Object?> row) => SplitTemplate(
   name: row['name'] as String,
   position: row['position'] as int,
   createdAt: row['created_at'] as int,
+  kind: TrainingDayKind.values.byName(row['kind'] as String),
 );
 
 Future<List<TemplateSummary>> listTemplates(SqlExecutor exec) =>
@@ -65,6 +67,10 @@ Future<TemplateDetail> saveTemplate(
     throw const PlanValidationException('计划动作过多');
   }
   final existing = draft.id == null ? null : await readTemplate(tx, draft.id!);
+  if (existing?.template.kind == TrainingDayKind.rest &&
+      draft.exerciseIds.isNotEmpty) {
+    throw const PlanValidationException('休息日不能包含动作');
+  }
   if (draft.id != null &&
       (existing == null || existing.editToken != draft.expectedToken)) {
     throw const PlanValidationException('计划已变化，请重新载入');

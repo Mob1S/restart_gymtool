@@ -78,7 +78,7 @@ void main() {
   testWidgets('real export button saves parseable snapshot', (tester) async {
     await pumpSection(tester);
     await tap(tester, '导出备份');
-    expect(decodeBackup(files.savedBytes!).schemaVersion, 6);
+    expect(decodeBackup(files.savedBytes!).schemaVersion, 7);
     expect(find.text('备份已保存'), findsOneWidget);
   });
 

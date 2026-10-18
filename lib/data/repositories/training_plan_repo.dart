@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../../domain/plans.dart';
 import '../../domain/backup_codec.dart';
 import '../../domain/training_plans.dart';
+import '../../domain/local_date.dart';
 import '../db/sql_executor.dart';
 import '../ids.dart';
 import 'template_repo.dart';
@@ -43,12 +44,14 @@ Future<TrainingPlanDetail?> readTrainingPlan(SqlExecutor tx, String id) async {
     name: row['name'] as String,
     position: row['position'] as int,
     createdAt: row['created_at'] as int,
+    activatedOn: LocalDate.tryParse(row['activated_on'] as String?),
     token: jsonEncode([row, for (final day in details) day.editToken]),
     days: [
       for (final day in details)
         TrainingDay(
           id: day.template.id,
           name: day.template.name,
+          kind: day.template.kind,
           exerciseIds: [
             for (final item in day.exercises) item.entry.exerciseId,
           ],
@@ -85,6 +88,9 @@ Future<TrainingPlanDetail> saveTrainingPlan(
   };
   // Validate everything before allocating IDs or writing any part of the draft.
   for (final day in draft.days) {
+    if (day.kind == TrainingDayKind.rest && day.exerciseIds.isNotEmpty) {
+      throw const PlanValidationException('休息日不能包含动作');
+    }
     if (day.name.trim().isEmpty) {
       throw const PlanValidationException('请输入训练日名称');
     }
@@ -148,21 +154,21 @@ Future<TrainingPlanDetail> saveTrainingPlan(
     final dayId = day.id ?? newId();
     if (day.id == null) {
       await tx.run(
-        'INSERT INTO split_template(id,name,position,created_at,plan_id) VALUES(?,?,?,?,?)',
+        'INSERT INTO split_template(id,name,position,created_at,plan_id,kind) VALUES(?,?,?,?,?,?)',
         [
           dayId,
           day.name.trim(),
           position,
           DateTime.now().millisecondsSinceEpoch,
           id,
+          day.kind.name,
         ],
       );
     } else {
-      await tx.run('UPDATE split_template SET name=?,position=? WHERE id=?', [
-        day.name.trim(),
-        position,
-        dayId,
-      ]);
+      await tx.run(
+        'UPDATE split_template SET name=?,position=?,kind=? WHERE id=?',
+        [day.name.trim(), position, day.kind.name, dayId],
+      );
     }
     final queues = <String, List<String>>{};
     for (final item in oldDetails[dayId]?.exercises ?? <TemplateItem>[]) {
@@ -189,6 +195,19 @@ Future<TrainingPlanDetail> saveTrainingPlan(
   }
   encodeBackup(await readBackupSnapshot(tx, exportedAt: 0));
   return (await readTrainingPlan(tx, id))!;
+});
+
+/// Home selection starts leading rest exactly once. Listing/editing never does.
+Future<void> activateTrainingPlan(
+  SqlExecutor exec,
+  String id, {
+  required LocalDate today,
+}) => exec.transaction((tx) async {
+  await tx.run(
+    'UPDATE training_plan SET activated_on=? WHERE id=? AND activated_on IS NULL',
+    [today.key, id],
+  );
+  encodeBackup(await readBackupSnapshot(tx, exportedAt: 0));
 });
 
 Future<void> deleteTrainingPlan(

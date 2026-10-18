@@ -421,9 +421,10 @@ class ActiveSessionController extends ChangeNotifier {
             preferredDayId: preferredDayId,
             freeTraining: freeTraining,
             preferredTemplateId: preferredTemplateId,
+            now: DateTime.fromMillisecondsSinceEpoch(_now()),
           );
           if (plan.planId != null && !plan.hasUsableDay) {
-            throw const PlanValidationException('请先添加训练日');
+            throw const PlanValidationException('当前没有可开始的训练日，请重新选择');
           }
           if (selectionToken != null && selectionToken != plan.selectionToken) {
             throw const PlanValidationException('计划已变化');

@@ -1,9 +1,10 @@
 import 'dart:math' as math;
 
 import 'weight_value.dart';
+import 'local_date.dart';
 
 const backupFormat = 'gym-tracker-backup';
-const backupVersion = 4;
+const backupVersion = 5;
 const maxBackupBytes = 20 * 1024 * 1024;
 const maxBackupRecords = 100000;
 const maxBackupTimestamp = 8640000000000000;
@@ -119,8 +120,13 @@ Map<String, Map<String, _Field>> _versionFields(int version) => {
       'name': _Field.id,
       'position': _Field.integer,
       'createdAt': _Field.time,
+      if (version >= 5) 'activatedOn': _Field.nullableText,
     },
-    'templates': {..._fields['templates']!, 'planId': _Field.id},
+    'templates': {
+      ..._fields['templates']!,
+      'planId': _Field.id,
+      if (version >= 5) 'kind': _Field.id,
+    },
     'sessions': {
       ..._fields['sessions']!,
       'planId': _Field.nullableText,
@@ -219,12 +225,13 @@ BackupFile validateBackup(Object? input) {
   if (root['format'] != backupFormat) _fail('format', '不是本应用的备份文件');
   final version = root['version'];
   if (version is! int || version < 1 || version > backupVersion) {
-    _fail('version', '不受支持，请使用格式 1 / 2 / 3 / 4 的备份；新版本文件请先升级应用');
+    _fail('version', '不受支持，请使用格式 1 / 2 / 3 / 4 / 5 的备份；新版本文件请先升级应用');
   }
   final schema = root['schemaVersion'];
   if (schema is! int ||
       schema < 1 ||
       switch (version) {
+        5 => schema != 7,
         4 => schema != 6,
         3 => schema < 5 || schema > 6,
         _ => schema > 4,
@@ -285,6 +292,17 @@ BackupFile validateBackup(Object? input) {
           ? 'exerciseId'
           : 'id';
       final id = row[key] as String;
+      if (version >= 5 &&
+          name == 'plans' &&
+          row['activatedOn'] != null &&
+          LocalDate.tryParse(row['activatedOn'] as String) == null) {
+        _fail('$path 的 activatedOn', '必须是有效的 YYYY-MM-DD 日期或 null');
+      }
+      if (version >= 5 &&
+          name == 'templates' &&
+          !{'training', 'rest'}.contains(row['kind'])) {
+        _fail('$path 的 kind', '必须是 training 或 rest');
+      }
       if (name == 'exercisePreferences') {
         if (version < 4 &&
             ![500, 1000, 1250, 2500, 5000].contains(row['weightStepMilli'])) {
@@ -338,6 +356,13 @@ BackupFile validateBackup(Object? input) {
     final templates = {
       for (final row in normalized['templates']!) row['id']: row,
     };
+    if (version >= 5) {
+      for (final row in normalized['templateExercises']!) {
+        if (templates[row['templateId']]!['kind'] == 'rest') {
+          _fail('data.templateExercises ${row['id']}', '休息日不能包含动作');
+        }
+      }
+    }
     for (final row in normalized['sessions']!) {
       final template = templates[row['templateId']];
       if (template != null && template['planId'] != row['planId']) {

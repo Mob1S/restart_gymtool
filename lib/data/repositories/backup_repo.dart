@@ -94,8 +94,15 @@ const _tables = {
     'position',
     'createdAt',
     'planId',
+    'kind',
   ]),
-  'plans': _Table('training_plan', ['id', 'name', 'position', 'createdAt']),
+  'plans': _Table('training_plan', [
+    'id',
+    'name',
+    'position',
+    'createdAt',
+    'activatedOn',
+  ]),
   'templateExercises': _Table('template_exercise', [
     'id',
     'templateId',
@@ -159,15 +166,15 @@ Future<BackupPreview> inspectBackup(
   BackupFile incoming,
 ) async {
   // Check the source byte limit before normalization as well as the expanded
-  // v4 size; neither legacy defaults nor new parent rows bypass the limits.
+  // current size; neither legacy defaults nor new parent rows bypass limits.
   encodeBackup(incoming);
-  final validated = validateBackup(upgradeBackupToV4(incoming.toJson()));
+  final validated = validateBackup(upgradeBackupToV5(incoming.toJson()));
   encodeBackup(validated);
   return BackupPreview._(validated, await exportBackup(exec, exportedAt: 0));
 }
 
 Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
-  final incoming = validateBackup(upgradeBackupToV4(preview.incoming.toJson()));
+  final incoming = validateBackup(upgradeBackupToV5(preview.incoming.toJson()));
   await exec.transaction((tx) async {
     final current = await _snapshot(tx, 0);
     if (jsonEncode(current.data) != preview._baseline) {

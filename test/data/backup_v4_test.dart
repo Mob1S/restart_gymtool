@@ -294,10 +294,13 @@ void main() {
         await setSetting(db, 'theme_mode', 'dark');
         final incoming = validateBackup(v4Fixture());
         final preview = await inspectBackup(db, incoming);
-        expect(preview.incoming.version, 4);
+        expect(preview.incoming.version, 5);
         await restoreBackup(db, preview);
         final first = await exportBackup(db, exportedAt: 123);
-        expect(first.rows('plans'), incoming.rows('plans'));
+        expect(
+          first.rows('plans'),
+          validateBackup(upgradeBackupToV5(incoming.toJson())).rows('plans'),
+        );
         expect(
           first.rows('exercisePreferences'),
           incoming.rows('exercisePreferences'),

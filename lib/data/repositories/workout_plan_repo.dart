@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import '../../domain/plans.dart';
-import '../../domain/rotation.dart';
+import '../../domain/local_date.dart';
+import '../../domain/training_plans.dart';
+import '../../domain/training_schedule.dart';
 import '../db/sql_executor.dart';
 import 'training_plan_repo.dart';
 import 'session_repo.dart';
@@ -12,6 +14,7 @@ Future<PlannedWorkout> loadNextWorkout(
   String? preferredDayId,
   bool freeTraining = false,
   String? preferredTemplateId,
+  DateTime? now,
 }) => exec.transaction(
   (tx) => readPlannedWorkout(
     tx,
@@ -19,6 +22,7 @@ Future<PlannedWorkout> loadNextWorkout(
     preferredDayId: preferredDayId,
     freeTraining: freeTraining,
     preferredTemplateId: preferredTemplateId,
+    now: now,
   ),
 );
 
@@ -28,7 +32,9 @@ Future<PlannedWorkout> readPlannedWorkout(
   String? preferredDayId,
   bool freeTraining = false,
   String? preferredTemplateId,
+  DateTime? now,
 }) async {
+  final today = LocalDate.fromDateTime(now ?? DateTime.now());
   if (preferredDayId != null &&
       preferredTemplateId != null &&
       preferredDayId != preferredTemplateId) {
@@ -61,7 +67,7 @@ Future<PlannedWorkout> readPlannedWorkout(
           )).map((e) => e.exerciseId).toList();
     return PlannedWorkout(
       exerciseIds: exercises,
-      selectionToken: jsonEncode(['free', previous?.id, exercises]),
+      selectionToken: jsonEncode(['free', today.key, previous?.id, exercises]),
     );
   }
   selectedId ??= plans.first.id;
@@ -79,18 +85,36 @@ Future<PlannedWorkout> readPlannedWorkout(
     'ORDER BY finished_at DESC,rowid DESC LIMIT 1',
     [plan.id],
   );
-  final dayId =
-      preferred ?? recommendDay(ids, latest?['template_id'] as String?);
-  final day = dayId == null
-      ? null
-      : plan.days.firstWhere((day) => day.id == dayId);
+  var schedule = resolveTrainingSchedule(
+    days: plan.days,
+    today: today,
+    activatedOn: plan.activatedOn,
+    completedDayId: latest?['template_id'] as String?,
+    completedOn: latest == null
+        ? null
+        : LocalDate.fromDateTime(
+            DateTime.fromMillisecondsSinceEpoch(latest['finished_at'] as int),
+          ),
+  );
+  if (preferred != null) {
+    final chosen = plan.days.firstWhere((day) => day.id == preferred);
+    if (chosen.kind != TrainingDayKind.training) {
+      throw const PlanValidationException('休息日不能开始计划训练，请重新选择训练日');
+    }
+    schedule = TrainingSchedule(TrainingScheduleState.training, day: chosen);
+  }
+  final day = schedule.day;
+  final dayId = day?.id;
   return PlannedWorkout(
+    schedule: schedule,
     planId: plan.id,
     planName: plan.name,
     templateId: day?.id,
     name: day?.name,
     dayName: day?.name,
-    exerciseIds: day?.exerciseIds ?? [],
+    exerciseIds: schedule.state == TrainingScheduleState.training
+        ? day!.exerciseIds
+        : [],
     selectionToken: jsonEncode([
       plan.id,
       [
@@ -99,6 +123,8 @@ Future<PlannedWorkout> readPlannedWorkout(
       plan.token,
       latest,
       dayId,
+      today.key,
+      schedule.state.name,
     ]),
   );
 }

@@ -101,6 +101,7 @@ class PlanController extends ChangeNotifier {
     days[index] = TrainingDayDraft(
       id: d.days[index].id,
       name: day.name,
+      kind: day.kind,
       exerciseIds: day.exerciseIds,
     );
     _edit(d.name, days);
