@@ -25,7 +25,9 @@ Future<String?> showPlanPicker(
         for (final plan in plans)
           ListTile(
             title: Text(plan.name),
-            subtitle: Text('${plan.days.length} 个训练日'),
+            subtitle: Text(
+              '${plan.days.where((d) => d.kind == TrainingDayKind.training).length} 个训练日 · ${plan.days.where((d) => d.kind == TrainingDayKind.rest).length} 个休息日',
+            ),
             trailing: selectedId == plan.id ? const Icon(Icons.check) : null,
             onTap: () => Navigator.pop(context, plan.id),
           ),
@@ -58,7 +60,9 @@ Future<String?> showTrainingDayPicker(
       controller: scroll,
       children: [
         ListTile(title: const Text('选择训练日'), subtitle: Text(plan.name)),
-        for (final day in plan.days)
+        for (final day in plan.days.where(
+          (d) => d.kind == TrainingDayKind.training,
+        ))
           ListTile(
             title: Text(day.name),
             subtitle: Text('${day.exerciseIds.length} 个动作'),

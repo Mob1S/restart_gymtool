@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../domain/training_plans.dart';
+
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -33,7 +36,7 @@ class _PlanListPageState extends State<PlanListPage> {
       builder: (context) => AlertDialog(
         title: Text('删除计划「${preview.name}」？'),
         content: Text(
-          '将移除 ${preview.days.length} 个训练日及其动作清单。历史训练和进行中的训练仍会保留，只解除计划关联。此操作无法撤销。',
+          '将移除周期中的 ${preview.days.length} 天及其动作清单。历史训练和进行中的训练仍会保留，只解除计划关联。此操作无法撤销。',
         ),
         actions: [
           TextButton(
@@ -66,7 +69,7 @@ class _PlanListPageState extends State<PlanListPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('一套计划包含多个训练日。完成整次训练后，按该计划的训练日顺序轮换，也可手动选择。'),
+          const Text('自由安排训练和休息的顺序。训练后进入下一项，休息按自然日推进。'),
           if (c.busy) const LinearProgressIndicator(),
           if (c.message != null) Text(c.message!),
           if (c.plans.isEmpty && !c.busy)
@@ -81,7 +84,7 @@ class _PlanListPageState extends State<PlanListPage> {
                   ListTile(
                     title: Text(c.plans[i].name),
                     subtitle: Text(
-                      '${c.plans[i].days.length} 个训练日 · ${c.plans[i].days.fold<int>(0, (n, day) => n + day.exerciseIds.length)} 个动作',
+                      '${c.plans[i].days.where((d) => d.kind == TrainingDayKind.training).length} 个训练日 · ${c.plans[i].days.where((d) => d.kind == TrainingDayKind.rest).length} 个休息日',
                     ),
                     onTap: c.busy
                         ? null

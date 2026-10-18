@@ -121,6 +121,7 @@ Future<PlannedWorkout> readPlannedWorkout(
         for (final parent in plans) [parent.id, parent.position],
       ],
       plan.token,
+      plan.activatedOn?.key,
       latest,
       dayId,
       today.key,

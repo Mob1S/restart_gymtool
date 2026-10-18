@@ -338,7 +338,7 @@ void main() {
       revision.changed();
       await settle(t);
       expect(find.text('尚未配置训练日'), findsOneWidget);
-      expect(find.text('共 0 个训练日'), findsOneWidget);
+      expect(find.text('0 个训练日 · 0 个休息日'), findsOneWidget);
       expect(primary().onPressed, isNull);
       await t.runAsync(() async {
         expect(await getSetting(db, activeTrainingPlanKey), empty.id);

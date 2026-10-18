@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +14,7 @@ import '../../domain/local_date.dart';
 import '../../domain/plans.dart';
 import '../../domain/session_label.dart';
 import '../../domain/training_plans.dart';
+import '../../domain/training_schedule.dart';
 import '../../state/active_session_controller.dart';
 import '../../state/data_revision.dart';
 import '../../ui/theme.dart';
@@ -25,12 +28,17 @@ import 'training_calendar.dart';
 const activeTrainingPlanKey = 'active_training_plan_id';
 
 class WorkoutHomePage extends StatefulWidget {
-  const WorkoutHomePage({super.key});
+  final DateTime Function()? now;
+  const WorkoutHomePage({super.key, this.now});
   @override
   State<WorkoutHomePage> createState() => _WorkoutHomePageState();
 }
 
-class _WorkoutHomePageState extends State<WorkoutHomePage> {
+class _WorkoutHomePageState extends State<WorkoutHomePage>
+    with WidgetsBindingObserver {
+  Timer? _midnight;
+  LocalDate? _lastDate;
+  DateTime get _now => widget.now?.call() ?? DateTime.now();
   PlannedWorkout? _planned;
   List<TrainingPlanDetail> _plans = [];
   Map<String, String> _exerciseNames = {};
@@ -65,7 +73,46 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _lastDate = LocalDate.fromDateTime(_now);
+    _scheduleMidnight();
     WidgetsBinding.instance.addPostFrameCallback((_) => _probe());
+  }
+
+  void _scheduleMidnight() {
+    _midnight?.cancel();
+    final now = _now;
+    _midnight = Timer(
+      LocalDate.fromDateTime(now).nextStart.difference(now),
+      () {
+        _refreshDate();
+      },
+    );
+  }
+
+  void _refreshDate({bool force = false}) {
+    if (!mounted) return;
+    final today = LocalDate.fromDateTime(_now);
+    final changed = today != _lastDate;
+    _lastDate = today;
+    if (changed) _preferredDayId = null;
+    if ((force || changed) && !_starting) {
+      _loadPlan();
+      _loadMonth();
+    }
+    _scheduleMidnight();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshDate(force: true);
+  }
+
+  @override
+  void dispose() {
+    _midnight?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override
@@ -112,7 +159,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
   }
 
   Future<void> _loadPlan() async {
-    if (!mounted) return;
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
     final generation = ++_planGeneration;
     setState(() => _planLoading = true);
     final exec = context.read<SqlExecutor>();
@@ -131,15 +178,30 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
       final day = _preferredDayId;
       if (day != null &&
           !plans.any(
-            (p) => p.id == selected && p.days.any((d) => d.id == day),
+            (p) =>
+                p.id == selected &&
+                p.days.any(
+                  (d) => d.id == day && d.kind == TrainingDayKind.training,
+                ),
           )) {
         _preferredDayId = null;
       }
+      if (!_freeTraining &&
+          selected != null &&
+          ModalRoute.of(context)?.isCurrent != false) {
+        await activateTrainingPlan(
+          exec,
+          selected,
+          today: LocalDate.fromDateTime(_now),
+        );
+      }
+      if (!mounted || generation != _planGeneration) return;
       final plan = await loadNextWorkout(
         exec,
         planId: _freeTraining ? null : selected,
         preferredDayId: _freeTraining ? null : _preferredDayId,
         freeTraining: _freeTraining || plans.isEmpty,
+        now: _now,
       );
       final exercises = await listExercises(exec, includeArchived: true);
       if (!mounted || generation != _planGeneration) return;
@@ -181,7 +243,10 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
 
   Future<void> _pickDay() async {
     final parent = _plans.where((p) => p.id == _selectedPlanId).firstOrNull;
-    if (parent == null || parent.days.isEmpty) return;
+    if (parent == null ||
+        !parent.days.any((d) => d.kind == TrainingDayKind.training)) {
+      return;
+    }
     final choice = await showTrainingDayPicker(
       context,
       parent,
@@ -189,6 +254,13 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
     );
     if (!mounted || choice == null) return;
     _preferredDayId = choice;
+    _freeTraining = false;
+    await _loadPlan();
+  }
+
+  Future<void> _chooseFreeTraining() async {
+    _freeTraining = true;
+    _preferredDayId = null;
     await _loadPlan();
   }
 
@@ -283,6 +355,10 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
   Widget _planCard() {
     final parent = _plans.where((p) => p.id == _planned?.planId).firstOrNull;
     final planned = _planned;
+    final resting =
+        planned?.schedule?.state == TrainingScheduleState.rest ||
+        planned?.schedule?.state == TrainingScheduleState.completed;
+    final nextTraining = planned?.schedule?.nextTrainingDay;
     return AppCard(
       key: const ValueKey('home-plan-card'),
       padding: const EdgeInsets.all(12),
@@ -296,7 +372,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
           ),
           if (parent != null)
             Text(
-              '共 ${parent.days.length} 个训练日',
+              '${parent.days.where((d) => d.kind == TrainingDayKind.training).length} 个训练日 · ${parent.days.where((d) => d.kind == TrainingDayKind.rest).length} 个休息日',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           const SizedBox(height: 6),
@@ -309,7 +385,11 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
           ),
           Text(
             parent != null && parent.days.isEmpty
-                ? '进入管理计划添加训练日，或切换到自由训练'
+                ? '进入管理计划配置周期，或切换到自由训练'
+                : resting
+                ? nextTraining == null
+                      ? '按自然日休息，可随时自由训练'
+                      : '下一次：${nextTraining.name}'
                 : planned == null
                 ? '正在载入…'
                 : planned.exerciseIds.isEmpty
@@ -331,7 +411,12 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
                 child: const Text('切换计划'),
               ),
               TextButton(
-                onPressed: _starting || parent == null || parent.days.isEmpty
+                onPressed:
+                    _starting ||
+                        parent == null ||
+                        !parent.days.any(
+                          (d) => d.kind == TrainingDayKind.training,
+                        )
                     ? null
                     : _pickDay,
                 child: const Text('选择训练日'),
@@ -354,23 +439,43 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
     final hasActive = c.session != null;
     final canStart =
         _planned != null && (_planned!.freeTraining || _planned!.hasUsableDay);
-    final button = PrimaryButton(
-      key: const ValueKey('home-primary-action'),
-      label: hasActive ? '继续训练' : '开始训练',
-      icon: Icons.play_arrow_rounded,
-      onPressed: _starting || (!hasActive && (_planLoading || !canStart))
-          ? null
-          : hasActive
-          ? _continue
-          : _startNew,
-    );
+    final scheduleState = _planned?.schedule?.state;
+    final resting =
+        scheduleState == TrainingScheduleState.rest ||
+        scheduleState == TrainingScheduleState.completed;
+    final button = !hasActive && resting
+        ? SizedBox(
+            key: const ValueKey('home-primary-action'),
+            height: 56,
+            child: Center(
+              child: Text(
+                scheduleState == TrainingScheduleState.rest ? '今天休息' : '今日已完成',
+                style: Theme.of(context).textTheme.headlineMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          )
+        : PrimaryButton(
+            key: const ValueKey('home-primary-action'),
+            label: hasActive ? '继续训练' : '开始训练',
+            icon: Icons.play_arrow_rounded,
+            onPressed: _starting || (!hasActive && (_planLoading || !canStart))
+                ? null
+                : hasActive
+                ? _continue
+                : _startNew,
+          );
     final details = Column(
       key: _detailsKey,
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 8),
         Text(
-          hasActive ? _describe(c) : _planned?.dayName ?? '今天也为自己留一点时间',
+          hasActive
+              ? _describe(c)
+              : scheduleState == TrainingScheduleState.completed
+              ? '明天休息'
+              : _planned?.dayName ?? '今天也为自己留一点时间',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
@@ -383,6 +488,11 @@ class _WorkoutHomePageState extends State<WorkoutHomePage> {
                 ? null
                 : _startNew,
             child: const Text('开始新训练'),
+          ),
+        if (resting)
+          TextButton(
+            onPressed: _starting || _planLoading ? null : _chooseFreeTraining,
+            child: const Text('自由训练'),
           ),
         if (_message != null) Text(_message!, textAlign: TextAlign.center),
       ],

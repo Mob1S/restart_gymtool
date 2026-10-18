@@ -45,7 +45,12 @@ Future<TrainingPlanDetail?> readTrainingPlan(SqlExecutor tx, String id) async {
     position: row['position'] as int,
     createdAt: row['created_at'] as int,
     activatedOn: LocalDate.tryParse(row['activated_on'] as String?),
-    token: jsonEncode([row, for (final day in details) day.editToken]),
+    // Activation is independent of editable content and is never overwritten
+    // by a draft save. First home selection must not invalidate an open draft.
+    token: jsonEncode([
+      {...row}..remove('activated_on'),
+      for (final day in details) day.editToken,
+    ]),
     days: [
       for (final day in details)
         TrainingDay(
@@ -203,6 +208,17 @@ Future<void> activateTrainingPlan(
   String id, {
   required LocalDate today,
 }) => exec.transaction((tx) async {
+  final current = await readTrainingPlan(tx, id);
+  if (current == null || current.activatedOn != null) return;
+  // A usable completion already anchors the cycle. The fallback date is
+  // recorded only when leading rest or a missing completion needs it.
+  final latest = await tx.first<Map<String, Object?>>(
+    'SELECT template_id FROM session WHERE plan_id=? '
+    "AND finished_at IS NOT NULL AND origin IN ('live','legacy') "
+    'ORDER BY finished_at DESC,rowid DESC LIMIT 1',
+    [id],
+  );
+  if (current.days.any((day) => day.id == latest?['template_id'])) return;
   await tx.run(
     'UPDATE training_plan SET activated_on=? WHERE id=? AND activated_on IS NULL',
     [today.key, id],

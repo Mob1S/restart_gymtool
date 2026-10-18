@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/plan_controller.dart';
+import '../../domain/training_plans.dart';
 import 'day_editor_sheet.dart';
 
 class PlanEditorPage extends StatefulWidget {
@@ -93,15 +94,18 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
               ),
               const SizedBox(height: 24),
               Text(
-                '训练日 · ${draft.days.length} 天',
+                '周期 · ${draft.days.length} 天',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
-              const Text('按这里的顺序轮换，训练日数量和名称可自由设置。'),
+              Text(
+                '${draft.days.where((d) => d.kind == TrainingDayKind.training).length} 个训练日 · ${draft.days.where((d) => d.kind == TrainingDayKind.rest).length} 个休息日',
+              ),
+              const Text('按此顺序轮换；休息日按自然日推进，训练日等待实际完成。'),
               if (draft.days.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text('还没有训练日。可以先保存计划，稍后配置。'),
+                  child: Text('还没有配置周期。可以先保存计划，稍后配置。'),
                 ),
               for (var i = 0; i < draft.days.length; i++)
                 Card(
@@ -109,9 +113,16 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                   child: Column(
                     children: [
                       ListTile(
+                        leading: Icon(
+                          draft.days[i].kind == TrainingDayKind.rest
+                              ? Icons.bedtime_outlined
+                              : Icons.fitness_center,
+                        ),
                         title: Text('${i + 1}. ${draft.days[i].name}'),
                         subtitle: Text(
-                          '${draft.days[i].exerciseIds.length} 个动作',
+                          draft.days[i].kind == TrainingDayKind.rest
+                              ? '休息日'
+                              : '${draft.days[i].exerciseIds.length} 个动作',
                         ),
                         onTap: c.busy
                             ? null
@@ -127,7 +138,9 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           IconButton(
-                            tooltip: '编辑训练日',
+                            tooltip: draft.days[i].kind == TrainingDayKind.rest
+                                ? '编辑休息日'
+                                : '编辑训练日',
                             onPressed: c.busy
                                 ? null
                                 : () async {
@@ -142,21 +155,27 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                             icon: const Icon(Icons.edit_outlined),
                           ),
                           IconButton(
-                            tooltip: '上移训练日',
+                            tooltip: draft.days[i].kind == TrainingDayKind.rest
+                                ? '上移休息日'
+                                : '上移训练日',
                             onPressed: c.busy || i == 0
                                 ? null
                                 : () => c.moveDay(i, -1),
                             icon: const Icon(Icons.arrow_upward),
                           ),
                           IconButton(
-                            tooltip: '下移训练日',
+                            tooltip: draft.days[i].kind == TrainingDayKind.rest
+                                ? '下移休息日'
+                                : '下移训练日',
                             onPressed: c.busy || i == draft.days.length - 1
                                 ? null
                                 : () => c.moveDay(i, 1),
                             icon: const Icon(Icons.arrow_downward),
                           ),
                           IconButton(
-                            tooltip: '删除训练日',
+                            tooltip: draft.days[i].kind == TrainingDayKind.rest
+                                ? '删除休息日'
+                                : '删除训练日',
                             onPressed: c.busy
                                 ? null
                                 : () async {
@@ -164,10 +183,10 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                                       context: context,
                                       builder: (context) => AlertDialog(
                                         title: Text(
-                                          '删除训练日「${draft.days[i].name}」？',
+                                          '删除${draft.days[i].kind == TrainingDayKind.rest ? '休息日' : '训练日'}「${draft.days[i].name}」？',
                                         ),
                                         content: const Text(
-                                          '保存计划后移除这个训练日，已有训练记录会保留。',
+                                          '保存计划后移除这一项，已有训练记录会保留。',
                                         ),
                                         actions: [
                                           TextButton(
@@ -178,7 +197,12 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                                           TextButton(
                                             onPressed: () =>
                                                 Navigator.pop(context, true),
-                                            child: const Text('删除训练日'),
+                                            child: Text(
+                                              draft.days[i].kind ==
+                                                      TrainingDayKind.rest
+                                                  ? '删除休息日'
+                                                  : '删除训练日',
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -203,6 +227,19 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                       },
                 icon: const Icon(Icons.add),
                 label: const Text('添加训练日'),
+              ),
+              OutlinedButton.icon(
+                onPressed: c.busy
+                    ? null
+                    : () async {
+                        final day = await showDayEditorSheet(
+                          context,
+                          initialKind: TrainingDayKind.rest,
+                        );
+                        if (day != null && mounted) c.addDay(day);
+                      },
+                icon: const Icon(Icons.bedtime_outlined),
+                label: const Text('添加休息日'),
               ),
             ],
           ],

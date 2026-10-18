@@ -113,6 +113,11 @@ void main() {
     await activateTrainingPlan(db, p.id, today: LocalDate(2026, 10, 18));
     await activateTrainingPlan(db, p.id, today: LocalDate(2026, 10, 20));
     final activated = (await getTrainingPlan(db, p.id))!;
+    expect(
+      activated.token,
+      p.token,
+      reason: 'Activation must not invalidate content drafts',
+    );
     expect(activated.activatedOn, LocalDate(2026, 10, 18));
     expect(
       (await loadNextWorkout(
@@ -394,6 +399,21 @@ void main() {
           now: DateTime(2026, 10, 19),
         )).schedule!.state,
         TrainingScheduleState.rest,
+      );
+    },
+  );
+  test(
+    'legacy completion anchors schedule without writing a new activation date',
+    () async {
+      final p = await make();
+      await complete(p);
+      await activateTrainingPlan(db, p.id, today: LocalDate(2026, 10, 19));
+      expect((await getTrainingPlan(db, p.id))!.activatedOn, isNull);
+      await db.run("DELETE FROM session WHERE id='done'");
+      await activateTrainingPlan(db, p.id, today: LocalDate(2026, 10, 20));
+      expect(
+        (await getTrainingPlan(db, p.id))!.activatedOn,
+        LocalDate(2026, 10, 20),
       );
     },
   );

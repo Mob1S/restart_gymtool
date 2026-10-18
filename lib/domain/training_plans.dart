@@ -40,8 +40,12 @@ class TrainingDay {
     required this.name,
     required List<String> exerciseIds,
   }) : exerciseIds = List.unmodifiable(exerciseIds);
-  TrainingDayDraft toDraft() =>
-      TrainingDayDraft(id: id, name: name, kind: kind, exerciseIds: exerciseIds);
+  TrainingDayDraft toDraft() => TrainingDayDraft(
+    id: id,
+    name: name,
+    kind: kind,
+    exerciseIds: exerciseIds,
+  );
 }
 
 class TrainingPlanDetail {

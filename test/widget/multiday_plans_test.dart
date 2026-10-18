@@ -66,6 +66,11 @@ void main() {
       await t.runAsync(() async {
         final plan = (await listTrainingPlans(db)).single;
         id = plan.id;
+        expect(
+          plan.activatedOn,
+          isNull,
+          reason: 'Management alone must not activate leading rest',
+        );
         expect(plan.days.map((day) => day.name), ['上肢 A', '下肢 A']);
         expect(plan.days.first.exerciseIds, isNot(plan.days.last.exerciseIds));
       });

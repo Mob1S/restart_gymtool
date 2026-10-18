@@ -34,8 +34,11 @@ TrainingSchedule resolveTrainingSchedule({
     hasCompletion ? completedOn : activatedOn ?? today,
   );
   if (hasCompletion && elapsed <= 0) {
-    return TrainingSchedule(TrainingScheduleState.completed,
-      day: days[index], nextTrainingDay: nextTraining);
+    return TrainingSchedule(
+      TrainingScheduleState.completed,
+      day: days[index],
+      nextTrainingDay: nextTraining,
+    );
   }
   // The first rest after a completion is tomorrow; leading rest is today.
   elapsed = (elapsed - (hasCompletion ? 1 : 0)).clamp(0, 3652425);
@@ -50,7 +53,8 @@ TrainingSchedule resolveTrainingSchedule({
   final day = days[index];
   return TrainingSchedule(
     day.kind == TrainingDayKind.rest
-        ? TrainingScheduleState.rest : TrainingScheduleState.training,
+        ? TrainingScheduleState.rest
+        : TrainingScheduleState.training,
     day: day,
     nextTrainingDay: day.kind == TrainingDayKind.rest ? nextTraining : null,
   );

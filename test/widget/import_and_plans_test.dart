@@ -107,7 +107,7 @@ void main() {
       await tap(t, '完成');
       await tap(t, '保存');
       expect(find.text('A'), findsOneWidget);
-      expect(find.text('1 个训练日 · 2 个动作'), findsOneWidget);
+      expect(find.text('1 个训练日 · 0 个休息日'), findsOneWidget);
       await t.runAsync(() async {
         final list = await listTemplates(db);
         expect(

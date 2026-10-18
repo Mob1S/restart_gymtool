@@ -85,7 +85,8 @@ class PlannedWorkout {
     required this.selectionToken,
   }) : exerciseIds = List.unmodifiable(exerciseIds);
 
-  bool get hasUsableDay => templateId != null &&
+  bool get hasUsableDay =>
+      templateId != null &&
       (schedule == null || schedule!.state == TrainingScheduleState.training);
   bool get freeTraining => planId == null;
 }
