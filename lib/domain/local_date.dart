@@ -62,6 +62,11 @@ class LocalDate {
 
   DateTime get nextStart => DateTime(year, month, day + 1);
 
+  /// Compare civil dates, independent of DST or the length of a local day.
+  int daysSince(LocalDate other) => DateTime.utc(year, month, day)
+      .difference(DateTime.utc(other.year, other.month, other.day))
+      .inDays;
+
   @override
   bool operator ==(Object other) =>
       other is LocalDate &&

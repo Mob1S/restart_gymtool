@@ -1,12 +1,17 @@
 import 'dart:convert';
 
+import 'training_plans.dart';
+import 'training_schedule.dart';
+
 class SplitTemplate {
   final String id;
   final String name;
   final int position;
   final int createdAt;
+  final TrainingDayKind kind;
   const SplitTemplate({
     required this.id,
+    this.kind = TrainingDayKind.training,
     required this.name,
     required this.position,
     required this.createdAt,
@@ -61,6 +66,7 @@ class TemplateDraft {
 }
 
 class PlannedWorkout {
+  final TrainingSchedule? schedule;
   final String? planId;
   final String? planName;
   final String? dayName;
@@ -69,6 +75,7 @@ class PlannedWorkout {
   final List<String> exerciseIds;
   final String selectionToken;
   PlannedWorkout({
+    this.schedule,
     this.planId,
     this.planName,
     this.dayName,
@@ -78,7 +85,8 @@ class PlannedWorkout {
     required this.selectionToken,
   }) : exerciseIds = List.unmodifiable(exerciseIds);
 
-  bool get hasUsableDay => templateId != null;
+  bool get hasUsableDay => templateId != null &&
+      (schedule == null || schedule!.state == TrainingScheduleState.training);
   bool get freeTraining => planId == null;
 }
 
