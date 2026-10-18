@@ -28,3 +28,8 @@
 - 迁移、备份恢复、计划编辑和器械偏好提交保留事务回滚与数据一致性检查。
 
 本轮验证与尚待真机的项目见[实施记录](docs/superpowers/plans/2026-10-17-training-redesign-execution.md)。
+
+### 真机验证
+
+- 荣耀Magic6 Pro已覆盖更新主包，验证方向锁定、原生单位、强杀恢复、熄屏计时、横屏和历史操作。
+- 测试记录及偏好已清理还原，测试前后原有数据逐字段一致。详细范围见[真机验收记录](docs/superpowers/plans/2026-10-17-android-training-redesign-acceptance.md)。

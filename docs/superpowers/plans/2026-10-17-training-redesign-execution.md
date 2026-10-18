@@ -67,7 +67,7 @@ flutter build apk --release --no-pub
 - `aapt dump badging` 确认包名 `com.mobis.gym_tracker`、versionName `1.0.0`、minSdk 24、targetSdk 36。
 - release SHA256：`628AFA84D20DFC6F92B9837B9EA4ABE3E5A8653945D9EF03AB27CD83A21D6CDE`。
 
-`adb devices -l` 返回空设备列表。本轮没有覆盖安装手机，没有把浏览器和 APK 构建通过视作真机验收。真实触摸手感、汗手灵敏度、手机系统打断、熄屏和强杀恢复仍待设备连接。
+初次交付时没有设备。用户随后连接手机，主包已覆盖安装并完成主要真机验收：方向锁定、高亮及中断还原、kg/lb原始读数、强杀恢复、常亮、熄屏计时、横屏滚动和历史联动均通过。清理测试记录后，备份的整个data对象与基线逐字段一致，旧5场／21组／52动作和偏好未变化。详情与实测范围见[Android真机验收记录](2026-10-17-android-training-redesign-acceptance.md)；多指、汗手与长时间现场的主观手感仍待人工试用。
 
 ## 云端与更新日志
 
