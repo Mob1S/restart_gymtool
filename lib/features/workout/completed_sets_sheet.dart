@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../domain/weight_value.dart';
 import '../../state/active_session_controller.dart';
@@ -36,7 +37,21 @@ Future<void> showCompletedSetsSheet(
                     title: Text(
                       '第 ${index + 1} 组 · ${set.equipmentWeight.label} × ${set.reps}',
                     ),
-                    trailing: const Icon(Icons.edit_outlined),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: '视频复盘',
+                          icon: const Icon(Icons.video_library_outlined),
+                          onPressed: controller.writing
+                              ? null
+                              : () => context.push(
+                                  '/review/${Uri.encodeComponent(set.id)}',
+                                ),
+                        ),
+                        const Icon(Icons.edit_outlined),
+                      ],
+                    ),
                     onTap: controller.writing
                         ? null
                         : () async {

@@ -4,6 +4,10 @@ Flutter 本地健身记录工具：按组记录重量和次数、正计时休息
 
 版本变化见[更新日志](CHANGELOG.md)。
 
+2026-10-19 新增 Android 卧推侧面视频复盘实验版：从「本场已记」的组记录或历史详情进入，导入视频、选取一组、标记近侧杠铃片中心，查看轨迹、骨架和逐次节奏，可重新定位及手动修正分次。使用 MediaPipe Lite 与 OpenCV 本地处理，不上传视频。当前尚无真实卧推视频和手机验收，不能把自动测试与构建成功理解为识别精度达标。交付与验证见[复盘实施记录](docs/superpowers/plans/2026-10-19-bench-press-video-review-execution.md)。
+
+本地数据库升至 schema 9；JSON 备份仍为 v6 / 训练数据 schema 8，不包含视频复盘。整库恢复会清除本机复盘，恢复预览已提示；相册原视频不删除。未保存的新分析不支持进程中断后自动续跑，需要重新导入；已保存的旧复盘在重新分析失败时保留。
+
 2026-10-18 本轮：内置计划、动作库扩充和个人重量参考已实现。586 项测试、26 项浏览器场景和 22 项故障注入检查通过；静态检查无问题，Web 与 Android release 构建成功。本轮尚未做真机专项验收，详见[实施记录](docs/superpowers/plans/2026-10-18-built-in-plans-and-load-guidance-execution.md)。
 
 同日较早的自然日休息更新：551 项测试、56 项浏览器场景及 34 项高风险路径复测通过。记录见[休息日实施记录](docs/superpowers/plans/2026-10-18-training-plan-rest-days-execution.md)。

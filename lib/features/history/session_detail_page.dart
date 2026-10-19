@@ -112,6 +112,8 @@ class _SessionDetailPageState extends State<SessionDetailPage>
           ),
         SessionSummaryView(
           summary: summary,
+          onReview: (set) =>
+              context.push('/review/${Uri.encodeComponent(set.id)}'),
           onEdit: (set, name, index) async {
             await showHistoricalSetEditor(
               context,

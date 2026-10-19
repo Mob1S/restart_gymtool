@@ -3,7 +3,6 @@ import 'dart:convert';
 import '../../domain/backup.dart';
 import '../../domain/backup_codec.dart';
 import '../../domain/backup_upgrade.dart';
-import '../db/migrations.dart';
 import '../db/sql_executor.dart';
 
 class BackupPreview {
@@ -141,14 +140,17 @@ Future<Map<String, Object?>> _readData(SqlExecutor tx) async {
   return data;
 }
 
-Future<BackupFile> _snapshot(SqlExecutor tx, int exportedAt) async =>
-    validateBackup({
-      'format': backupFormat,
-      'version': backupVersion,
-      'schemaVersion': schemaVersion,
-      'exportedAt': exportedAt,
-      'data': await _readData(tx),
-    });
+Future<BackupFile> _snapshot(
+  SqlExecutor tx,
+  int exportedAt,
+) async => validateBackup({
+  'format': backupFormat,
+  'version': backupVersion,
+  // Video review v9 is device-local. The exported training contract stays v8.
+  'schemaVersion': 8,
+  'exportedAt': exportedAt,
+  'data': await _readData(tx),
+});
 
 /// Caller holds a transaction; never starts a nested transaction.
 Future<BackupFile> readBackupSnapshot(

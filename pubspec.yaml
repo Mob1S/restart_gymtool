@@ -44,6 +44,7 @@ dependencies:
   pinyin: ^3.3.0
   path: ^1.9.1
   file_picker: 13.1.0
+  video_player: 2.14.1
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +57,7 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   wakelock_plus_platform_interface: ^1.7.0
+  video_player_platform_interface: 6.9.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

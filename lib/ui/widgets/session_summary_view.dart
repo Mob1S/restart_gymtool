@@ -20,8 +20,14 @@ import 'stat_block.dart';
 class SessionSummaryView extends StatelessWidget {
   final SessionSummary summary;
   final void Function(SetEntry set, String name, int index)? onEdit;
+  final void Function(SetEntry set)? onReview;
 
-  const SessionSummaryView({super.key, required this.summary, this.onEdit});
+  const SessionSummaryView({
+    super.key,
+    required this.summary,
+    this.onEdit,
+    this.onReview,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +128,7 @@ class SessionSummaryView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
-            for (final (index, set) in s.sets.indexed)
+            for (final (index, set) in s.sets.indexed) ...[
               InkWell(
                 onTap: onEdit == null
                     ? null
@@ -140,6 +146,16 @@ class SessionSummaryView extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onReview != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => onReview!(set),
+                    icon: const Icon(Icons.video_library_outlined, size: 18),
+                    label: Text('第 ${index + 1} 组视频复盘'),
+                  ),
+                ),
+            ],
             if (feedback != null) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(

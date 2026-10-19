@@ -2,6 +2,7 @@ import 'schema.dart';
 import 'sql_executor.dart';
 import 'training_v6_migration.dart';
 import 'training_v8_migration.dart';
+import 'video_review_migration.dart';
 
 /// 一个版本化迁移项。
 ///
@@ -64,10 +65,11 @@ const List<Migration> migrations = [
     ],
   ),
   Migration(version: 8, statements: trainingV8Statements),
+  Migration(version: 9, statements: videoReviewStatements),
 ];
 
 /// 当前库结构版本。必须与 [migrations] 的最后一项保持一致。
-const int schemaVersion = 8;
+const int schemaVersion = 9;
 
 /// 读出当前库结构版本。
 ///

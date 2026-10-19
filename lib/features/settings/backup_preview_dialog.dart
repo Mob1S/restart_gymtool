@@ -74,7 +74,7 @@ class _BackupPreviewDialogState extends State<BackupPreviewDialog> {
               ),
               const SizedBox(height: 12),
               const Text(
-                '这是整库恢复，会替换本机的动作库、训练记录和训练计划；备份含偏好时也会替换偏好。新建或编辑计划请使用「训练计划」。',
+                '这是整库恢复，会替换本机的动作库、训练记录和训练计划；备份含偏好时也会替换偏好。新建或编辑计划请使用「训练计划」。本机视频复盘也会清除，JSON 备份不包含复盘视频和分析结果。',
               ),
               const SizedBox(height: 12),
               Text('将用备份中的 $count 场训练替换本机的 $localCount 场训练。建议先导出当前数据。'),

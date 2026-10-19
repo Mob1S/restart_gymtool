@@ -38,7 +38,7 @@ class BackupSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                '将训练、动作和偏好保存为 JSON 文件。恢复会替换整个动作库、训练记录和训练计划；新建或编辑计划请使用「训练计划」。',
+                '将训练、动作和偏好保存为 JSON 文件。恢复会替换整个动作库、训练记录和训练计划；新建或编辑计划请使用「训练计划」。视频复盘仅保存在本机，不包含在 JSON 备份中；整库恢复会清除本机复盘。',
               ),
               const SizedBox(height: AppSpacing.md),
               OutlinedButton.icon(

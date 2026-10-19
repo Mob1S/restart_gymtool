@@ -14,6 +14,8 @@ import '../state/theme_controller.dart';
 import '../state/exercise_preferences_controller.dart';
 import '../state/backup_controller.dart';
 import '../state/data_revision.dart';
+import '../state/video_review_cleanup.dart';
+import '../data/repositories/video_review_repo.dart';
 import '../state/import_controller.dart';
 import '../state/plan_controller.dart';
 import '../state/record_management_controller.dart';
@@ -45,6 +47,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
   RecordManagementController? _records;
   final _revision = DataRevision();
   Object? _error;
+  VideoReviewCleanup? _reviewCleanup;
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
   Future<String?> _syncCatalog(SqlExecutor exec) async {
@@ -87,6 +90,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
   Future<void> _boot() async {
     try {
       final exec = await (widget.openDatabase ?? openAppDatabase)();
+      _reviewCleanup = VideoReviewCleanup(VideoReviewRepo(exec), _revision);
       await seedExercisesIfEmpty(exec);
       final catalogNotice = await _syncCatalog(exec);
 
@@ -195,6 +199,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
   @override
   void dispose() {
+    _reviewCleanup?.dispose();
     _plans?.dispose();
     _records?.dispose();
     _import?.dispose();

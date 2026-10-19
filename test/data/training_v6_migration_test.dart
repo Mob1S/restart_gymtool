@@ -91,7 +91,7 @@ void main() {
       'SELECT * FROM template_exercise ORDER BY rowid',
     );
     await migrate(db);
-    expect(await getSchemaVersion(db), 8);
+    expect(await getSchemaVersion(db), 9);
     final plans = await db.all<Map<String, Object?>>(
       'SELECT * FROM training_plan',
     );
@@ -145,7 +145,7 @@ void main() {
     await createV5(db, populate: false);
     await migrate(db);
     expect(await db.all('SELECT * FROM training_plan'), isEmpty);
-    expect(await getSchemaVersion(db), 8);
+    expect(await getSchemaVersion(db), 9);
   });
 
   for (final checkpoint in ['alter', 'preference', 'version']) {
@@ -180,7 +180,7 @@ void main() {
         expect(oldPref!['weight_step_milli'], 1250);
         expect(oldPref['equipment_note'], '座椅4\n😀  保留空白 ');
         await migrate(db);
-        expect(await getSchemaVersion(db), 8);
+        expect(await getSchemaVersion(db), 9);
         expect(await db.all('SELECT * FROM training_plan'), hasLength(1));
       },
     );

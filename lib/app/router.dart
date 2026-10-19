@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../features/history/history_page.dart';
+import '../features/review/video_review_page.dart';
 import '../features/history/session_detail_page.dart';
 import '../features/progress/exercise_detail_page.dart';
 import '../features/progress/progress_page.dart';
@@ -23,6 +24,10 @@ import '../domain/local_date.dart';
 GoRouter buildRouter() => GoRouter(
   initialLocation: '/',
   routes: [
+    GoRoute(
+      path: '/review/:setId',
+      builder: (_, s) => VideoReviewPage(setId: s.pathParameters['setId']!),
+    ),
     GoRoute(path: '/plans', builder: (_, _) => const PlanListPage()),
     GoRoute(path: '/plans/builtin', builder: (_, _) => const BuiltinPlanPage()),
     GoRoute(

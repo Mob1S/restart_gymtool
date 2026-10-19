@@ -11,6 +11,10 @@ include: package:flutter_lints/flutter.yaml
 
 analyzer:
   exclude:
+    - .tooling/**
+    - .tmp/**
+    - .superpowers/**
+    - .widget_preview/**
     - build/**
     - android/**
     - web/**
