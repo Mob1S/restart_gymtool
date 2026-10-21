@@ -40,6 +40,7 @@ class ReviewOverlay extends CustomPainter {
           for (var j = 1; j < part.length; j++) {
             if (part[j].valid &&
                 part[j - 1].valid &&
+                part[j].segment == part[j - 1].segment &&
                 part[j].t - part[j - 1].t <= 250) {
               canvas.drawLine(
                 position(part[j - 1]) + offset,
@@ -52,7 +53,13 @@ class ReviewOverlay extends CustomPainter {
       } else {
         for (var i = 1; i < frames.length; i++) {
           final a = frames[i - 1], b = frames[i];
-          if (b.t > time || !a.valid || !b.valid || b.t - a.t > 250) continue;
+          if (b.t > time ||
+              !a.valid ||
+              !b.valid ||
+              b.t - a.t > 250 ||
+              b.segment != a.segment) {
+            continue;
+          }
           paint.color = b.y! >= a.y! ? Colors.orangeAccent : Colors.cyanAccent;
           canvas.drawLine(position(a), position(b), paint);
         }
@@ -87,6 +94,19 @@ class ReviewOverlay extends CustomPainter {
         canvas.drawLine(point(edge[0]), point(edge[1]), paint);
         canvas.drawCircle(point(edge[0]), 3, paint);
         canvas.drawCircle(point(edge[1]), 3, paint);
+      }
+    }
+    if (nearest != null && nearest.valid && (nearest.t - time).abs() <= 100) {
+      paint.color = Colors.yellowAccent;
+      canvas.drawCircle(position(nearest), 5, paint);
+      final anchor = anchors.where((a) => (a['t'] as num) <= time).lastOrNull;
+      if (anchor != null) {
+        canvas.drawCircle(
+          position(nearest),
+          (anchor['radius'] as num).toDouble() *
+              math.min(size.width, size.height),
+          paint,
+        );
       }
     }
     for (final anchor in anchors) {

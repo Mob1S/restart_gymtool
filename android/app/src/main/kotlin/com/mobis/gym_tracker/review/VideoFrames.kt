@@ -81,7 +81,7 @@ class VideoFrames(private val file: File) {
         }
     }
 
-    private fun toBitmap(image: Image, rotation: Int): Bitmap {
+    fun toBitmap(image: Image, rotation: Int): Bitmap {
         val crop = image.cropRect
         val scale = max(1, (max(crop.width(), crop.height()) + 639) / 640)
         val width = max(1, crop.width() / scale)

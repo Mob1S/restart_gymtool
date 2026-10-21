@@ -4,9 +4,10 @@ import 'weight_value.dart';
 import 'local_date.dart';
 import 'training_prescription.dart';
 import 'set_detail.dart';
+import 'beverage.dart';
 
 const backupFormat = 'gym-tracker-backup';
-const backupVersion = 6;
+const backupVersion = 7;
 const maxBackupBytes = 20 * 1024 * 1024;
 const maxBackupRecords = 100000;
 const maxBackupTimestamp = 8640000000000000;
@@ -32,6 +33,7 @@ class BackupFile {
   );
 
   bool get hasSettings => data.containsKey('settings');
+  bool get hasBeverages => data.containsKey('beverages');
   List<Map<String, Object?>> rows(String name) => data[name] ?? const [];
   int get activeSessions =>
       rows('sessions').where((r) => r['finishedAt'] == null).length;
@@ -116,6 +118,16 @@ const _fields = <String, Map<String, _Field>>{
 
 Map<String, Map<String, _Field>> _versionFields(int version) => {
   ..._fields,
+  if (version >= 7) ...{
+    'beverages': {'id': _Field.id, 'payload': _Field.text},
+    'drinkRecords': {
+      'id': _Field.id,
+      'beverageId': _Field.nullableText,
+      'occurredAt': _Field.time,
+      'date': _Field.id,
+      'payload': _Field.text,
+    },
+  },
   if (version >= 6) ...{
     'catalogBindings': {'id': _Field.id, 'exerciseId': _Field.id},
     'programs': {'id': _Field.id, 'payload': _Field.text},
@@ -233,12 +245,13 @@ BackupFile validateBackup(Object? input) {
   if (root['format'] != backupFormat) _fail('format', '不是本应用的备份文件');
   final version = root['version'];
   if (version is! int || version < 1 || version > backupVersion) {
-    _fail('version', '不受支持，请使用格式 1 / 2 / 3 / 4 / 5 / 6 的备份；新版本文件请先升级应用');
+    _fail('version', '不受支持，请使用格式 1–7 的备份；新版本文件请先升级应用');
   }
   final schema = root['schemaVersion'];
   if (schema is! int ||
       schema < 1 ||
       switch (version) {
+        7 => schema != 11,
         6 => schema != 8,
         5 => schema != 7,
         4 => schema != 6,
@@ -352,6 +365,32 @@ BackupFile validateBackup(Object? input) {
 
   if (version >= 3) {
     references('exercisePreferences', 'exerciseId', 'exercises');
+  }
+  if (version >= 7) {
+    references('drinkRecords', 'beverageId', 'beverages', nullable: true);
+    for (final row in normalized['beverages']!) {
+      try {
+        final beverage = Beverage.decode(row['payload'] as String);
+        if (beverage.id != row['id']) {
+          _fail('data.beverages', '资料 ID 与行 ID 不一致');
+        }
+      } catch (e) {
+        _fail('data.beverages ${row['id']}', '$e');
+      }
+    }
+    for (final row in normalized['drinkRecords']!) {
+      try {
+        final record = DrinkRecord.decode(row['payload'] as String);
+        if (record.id != row['id'] ||
+            record.beverageId != row['beverageId'] ||
+            record.occurredAt != row['occurredAt'] ||
+            record.date.key != row['date']) {
+          _fail('data.drinkRecords', '快照与索引字段不一致');
+        }
+      } catch (e) {
+        _fail('data.drinkRecords ${row['id']}', '$e');
+      }
+    }
   }
   references('sessionExercises', 'sessionId', 'sessions');
   references('sessionExercises', 'exerciseId', 'exercises');

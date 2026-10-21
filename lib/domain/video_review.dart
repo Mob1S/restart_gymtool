@@ -4,8 +4,25 @@ class ReviewFrame {
   final int t;
   final double? x, y;
   final List<List<double>> pose;
-  const ReviewFrame(this.t, this.x, this.y, [this.pose = const []]);
-  bool get valid => x != null && y != null && x!.isFinite && y!.isFinite;
+  final int segment;
+  final String? missingReason;
+  const ReviewFrame(
+    this.t,
+    this.x,
+    this.y, [
+    this.pose = const [],
+    this.segment = 0,
+    this.missingReason,
+  ]);
+  bool get valid =>
+      x != null &&
+      y != null &&
+      x!.isFinite &&
+      y!.isFinite &&
+      x! >= 0 &&
+      x! <= 1 &&
+      y! >= 0 &&
+      y! <= 1;
   factory ReviewFrame.fromJson(Map<String, dynamic> json) => ReviewFrame(
     (json['t'] as num).toInt(),
     (json['x'] as num?)?.toDouble(),
@@ -18,7 +35,19 @@ class ReviewFrame {
           (p['v'] as num).toDouble(),
         ],
     ],
+    (json['segment'] as num?)?.toInt() ?? 0,
+    json['missingReason'] as String?,
   );
+  Map<String, dynamic> toJson() => {
+    't': t,
+    'x': x,
+    'y': y,
+    'segment': segment,
+    'missingReason': missingReason,
+    'pose': [
+      for (final p in pose) {'x': p[0], 'y': p[1], 'v': p[2]},
+    ],
+  };
 }
 
 class ReviewRep {
@@ -69,12 +98,16 @@ List<ReviewRep> detectReviewReps(List<ReviewFrame> frames) {
   ReviewFrame? top, bottom, end;
   var rising = false;
   int? last;
+  int? segment;
   for (final f in frames) {
-    if (!f.valid || (last != null && f.t - last > 250)) {
+    if (!f.valid ||
+        (last != null &&
+            (f.t - last > 250 || f.t <= last || f.segment != segment))) {
       top = bottom = end = null;
       rising = false;
     }
     last = f.t;
+    segment = f.segment;
     if (!f.valid) continue;
     top ??= f;
     if (bottom == null) {
@@ -171,7 +204,10 @@ List<ReviewMetric> reviewMetrics(
         part.first.t - rep.startMs <= 150 &&
         rep.endMs - part.last.t <= 150;
     for (var i = 0; i < part.length; i++) {
-      if (!part[i].valid || (i > 0 && part[i].t - part[i - 1].t > 250)) {
+      if (!part[i].valid ||
+          (i > 0 &&
+              (part[i].t - part[i - 1].t > 250 ||
+                  part[i].segment != part[i - 1].segment))) {
         valid = false;
       }
     }

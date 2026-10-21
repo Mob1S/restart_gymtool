@@ -70,6 +70,11 @@ void main() {
   }
 
   Future<void> tap(WidgetTester tester, String text) async {
+    if (text == '设置') {
+      await tester.tap(find.byTooltip('设置'));
+      await settle(tester);
+      return;
+    }
     await tester.ensureVisible(find.text(text));
     await tester.tap(find.text(text));
     await settle(tester);
@@ -78,7 +83,7 @@ void main() {
   testWidgets('real export button saves parseable snapshot', (tester) async {
     await pumpSection(tester);
     await tap(tester, '导出备份');
-    expect(decodeBackup(files.savedBytes!).schemaVersion, 8);
+    expect(decodeBackup(files.savedBytes!).schemaVersion, 11);
     expect(find.text('备份已保存'), findsOneWidget);
   });
 

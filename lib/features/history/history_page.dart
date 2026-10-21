@@ -124,8 +124,8 @@ class _HistoryPageState extends State<HistoryPage>
             children: [
               Expanded(
                 child: Text(
-                  '历史',
-                  style: Theme.of(context).textTheme.headlineLarge,
+                  '训练记录',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
               FilledButton.icon(

@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const webRoot = path.join(root, 'build', 'web');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const feature = process.env.GYM_BROWSER_FEATURE;
-assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign', 'rest_days', 'builtin_programs'].includes(feature));
+assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign', 'rest_days', 'builtin_programs', 'calories'].includes(feature));
 const output = path.join(root, 'build', 'acceptance', `browser-${feature || 'backup'}-${stamp}`);
 const chromePath = process.env.CHROME_EXECUTABLE || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -110,6 +110,10 @@ async function clickAt(x, y) {
   await delay(400);
 }
 async function clickText(text, exact = false) {
+  if (text === '设置' && await has('从备份恢复')) return;
+  if (['训练','热量','动作分析','历史','进步'].includes(text) && await has('从备份恢复')) {
+    await clickText('Back',true);
+  }
   let previous;
   const element = await until(async () => {
     const matches = (await semantics()).filter(e => !e.disabled && (exact ? e.text === text || e.value === text : e.text.includes(text) || e.value?.includes(text)) && (text.startsWith('收藏 ') || !e.text.startsWith('收藏 ')));
@@ -264,6 +268,7 @@ try {
     const { run } = await import(`./browser_${feature}_smoke.mjs`);
     await run({check,clickText,clickAt,tapText,expectText,has,semantics,send,evaluate,screenshot,
       until,exportFile,restoreFile,selectFile,downloadCsv,root,output,origin,
+      chooseImage:async(trigger,file)=>{chooser=null;await clickText(trigger,true);await until(()=>chooser,'image file chooser');await send('DOM.setFileInputFiles',{files:[file],backendNodeId:chooser.backendNodeId});},
       upload:async(file)=>{chooser=null;await clickText('选择 CSV 文件',true);await until(()=>chooser,'CSV file chooser');await send('DOM.setFileInputFiles',{files:[file],backendNodeId:chooser.backendNodeId});},
     });
   } else {
@@ -278,7 +283,7 @@ try {
     await clickText('设置', true); await clickText('深色', true);
     baseline = await exportFile('01-original-backup');
     assert.equal(baseline.data.format, 'gym-tracker-backup');
-    assert.equal(baseline.data.version, 6); assert.equal(baseline.data.schemaVersion, 8);
+    assert.equal(baseline.data.version, 7); assert.equal(baseline.data.schemaVersion, 11);
     assert.equal(baseline.data.data.sessions.length, 1);
     assert.equal(baseline.data.data.sets[0].weight, 20); assert.equal(baseline.data.data.sets[0].reps, 8);
     assert(baseline.data.data.settings.some(row => row.key === 'theme_mode' && row.value === 'dark'));

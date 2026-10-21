@@ -25,6 +25,14 @@ String _column(String field) =>
     field.replaceAllMapped(RegExp('[A-Z]'), (m) => '_${m[0]!.toLowerCase()}');
 
 const _tables = {
+  'beverages': _Table('beverage', ['id', 'payload']),
+  'drinkRecords': _Table('drink_record', [
+    'id',
+    'beverageId',
+    'occurredAt',
+    'date',
+    'payload',
+  ]),
   'catalogBindings': _Table('exercise_catalog_binding', ['id', 'exerciseId']),
   'programs': _Table('training_program', ['id', 'payload']),
   'prescriptions': _Table('session_prescription', ['id', 'payload']),
@@ -140,17 +148,15 @@ Future<Map<String, Object?>> _readData(SqlExecutor tx) async {
   return data;
 }
 
-Future<BackupFile> _snapshot(
-  SqlExecutor tx,
-  int exportedAt,
-) async => validateBackup({
-  'format': backupFormat,
-  'version': backupVersion,
-  // Video review v9 is device-local. The exported training contract stays v8.
-  'schemaVersion': 8,
-  'exportedAt': exportedAt,
-  'data': await _readData(tx),
-});
+Future<BackupFile> _snapshot(SqlExecutor tx, int exportedAt) async =>
+    validateBackup({
+      'format': backupFormat,
+      'version': backupVersion,
+      // v9/v10 motion media remains device-local; v11 adds beverage data only.
+      'schemaVersion': 11,
+      'exportedAt': exportedAt,
+      'data': await _readData(tx),
+    });
 
 /// Caller holds a transaction; never starts a nested transaction.
 Future<BackupFile> readBackupSnapshot(
@@ -186,6 +192,8 @@ Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
     if (jsonEncode(current.data) != preview._baseline) {
       throw const BackupValidationException('本机数据已变化，请重新预览并确认恢复');
     }
+    // Preserve local media even if incoming training IDs happen to match.
+    await tx.run('UPDATE motion_project SET set_id=NULL');
     for (final table in [
       'set_detail',
       'session_prescription',
@@ -222,6 +230,15 @@ Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
       await tx.run('DELETE FROM app_setting');
       await _insert(tx, 'settings', incoming.rows('settings'));
     }
+    if (incoming.hasBeverages) {
+      await tx.run('DELETE FROM drink_record');
+      await tx.run('DELETE FROM beverage');
+      await _insert(tx, 'beverages', incoming.rows('beverages'));
+      await _insert(tx, 'drinkRecords', incoming.rows('drinkRecords'));
+    }
+    // Also validate retained local beverages against combined backup limits
+    // when restoring a legacy file without beverage arrays.
+    encodeBackup(await _snapshot(tx, 0));
     await tx.run(
       "INSERT INTO app_meta (key,value) VALUES ('seed_initialized','1') ON CONFLICT(key) DO UPDATE SET value=excluded.value",
     );

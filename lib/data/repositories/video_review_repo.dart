@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'motion_project_repo.dart';
 
 import '../db/sql_executor.dart';
 
@@ -14,52 +14,32 @@ class VideoReviewRepo {
         'WHERE st.id=? AND st.is_completed=1',
         [setId],
       );
-  Future<Map<String, dynamic>?> load(String setId) async {
-    final row = await exec.first<Map<String, Object?>>(
-      'SELECT * FROM video_review WHERE set_id=?',
-      [setId],
-    );
-    return row == null
-        ? null
-        : {
-            'folder': row['folder'],
-            ...jsonDecode(row['payload'] as String) as Map<String, dynamic>,
-          };
-  }
-
+  Future<Map<String, dynamic>?> load(String setId) =>
+      MotionProjectRepo(exec).forSet(setId);
   Future<void> save(
     String setId,
     String folder,
     Map<String, dynamic> payload,
-  ) => exec.transaction((tx) async {
-    if (await tx.first(
-          'SELECT id FROM set_entry WHERE id=? AND is_completed=1',
-          [setId],
-        ) ==
-        null) {
-      throw StateError('这组训练已被删除或尚未完成');
-    }
-    await tx.run(
-      'INSERT INTO video_review(set_id,folder,payload) VALUES(?,?,?) '
-      'ON CONFLICT(set_id) DO UPDATE SET folder=excluded.folder,payload=excluded.payload',
-      [setId, folder, jsonEncode(payload)],
+  ) async {
+    final projects = MotionProjectRepo(exec);
+    final old = await projects.forSet(setId);
+    await projects.save(
+      id: old?['id'] as String? ?? 'legacy-$setId',
+      setId: setId,
+      mode: 'import',
+      folder: folder,
+      payload: payload,
     );
-  });
-  Future<void> delete(String setId) =>
-      exec.run('DELETE FROM video_review WHERE set_id=?', [setId]);
+  }
+
+  Future<void> delete(String setId) async {
+    final old = await MotionProjectRepo(exec).forSet(setId);
+    if (old != null) await MotionProjectRepo(exec).delete(old['id'] as String);
+  }
+
   Future<List<String>> folders() async => [
-    for (final row in await exec.all<Map<String, Object?>>(
-      'SELECT folder FROM video_review',
-    ))
-      row['folder'] as String,
+    for (final p in await MotionProjectRepo(exec).list()) p['folder'] as String,
   ];
-  Future<Map<String, String>> resultFiles() async => {
-    for (final row in await exec.all<Map<String, Object?>>(
-      'SELECT folder,payload FROM video_review',
-    ))
-      row['folder'] as String:
-          (jsonDecode(row['payload'] as String)
-                  as Map<String, dynamic>)['result']
-              as String,
-  };
+  Future<Map<String, String>> resultFiles() =>
+      MotionProjectRepo(exec).resultFiles();
 }

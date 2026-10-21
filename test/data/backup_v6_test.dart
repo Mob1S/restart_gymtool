@@ -17,8 +17,8 @@ void main() {
       await seedExercisesIfEmpty(db);
       await importBuiltinProgram(db, builtinPrograms.first);
       final before = await exportBackup(db, exportedAt: 0);
-      expect(before.version, 6);
-      expect(before.schemaVersion, 8);
+      expect(before.version, 7);
+      expect(before.schemaVersion, 11);
       expect(before.rows('catalogBindings').length, 71);
       await restoreBackup(db, await inspectBackup(db, before));
       expect((await exportBackup(db, exportedAt: 0)).data, before.data);

@@ -39,6 +39,26 @@ void main() {
     expect(metrics.single.valid, isFalse);
     expect(metrics.single.relativeAmplitude, isNull);
   });
+  test('re-anchoring breaks repetition and metric continuity even without timestamp gap', () {
+    final frames = [
+      for (var i = 0; i <= 20; i++)
+        ReviewFrame(
+          i * 100,
+          .5,
+          .2 + (i <= 10 ? i : 20 - i) * .03,
+          const [],
+          i < 11 ? 1 : 2,
+        ),
+    ];
+    expect(detectReviewReps(frames), isEmpty);
+    expect(
+      reviewMetrics(frames, [
+        const ReviewRep(0, 1000, 1000, 2000),
+      ]).single.valid,
+      isFalse,
+    );
+    expect(const ReviewFrame(0, 1.1, .5).valid, isFalse);
+  });
   test('long timestamp gap is missing data, even with valid endpoints', () {
     final frames = [
       const ReviewFrame(0, .5, .2),

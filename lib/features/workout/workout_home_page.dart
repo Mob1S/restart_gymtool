@@ -504,14 +504,6 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
         if (_message != null) Text(_message!, textAlign: TextAlign.center),
       ],
     );
-    final title = Text(
-      '训练',
-      style: TextStyle(
-        fontSize: AppFontSize.h1,
-        fontWeight: FontWeight.w700,
-        color: appColors(context).textPrimary,
-      ),
-    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
@@ -531,11 +523,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
           key: _topKey,
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
-          children: [
-            title,
-            const SizedBox(height: 6),
-            _calendar(compact: scale <= 1.15),
-          ],
+          children: [_calendar(compact: scale <= 1.15)],
         );
         final card = SizedBox(key: _cardKey, child: _planCard());
         return Padding(

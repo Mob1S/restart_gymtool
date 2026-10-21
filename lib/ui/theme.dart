@@ -10,6 +10,12 @@ ThemeData buildTheme(AppColors colors) {
 
   return ThemeData(
     useMaterial3: true,
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: {
+        for (final platform in TargetPlatform.values)
+          platform: const _ReducedMotionPageTransitionsBuilder(),
+      },
+    ),
     brightness: isDark ? Brightness.dark : Brightness.light,
     scaffoldBackgroundColor: colors.background,
     colorScheme:
@@ -22,6 +28,62 @@ ThemeData buildTheme(AppColors colors) {
           error: colors.danger,
         ),
     dividerColor: colors.border,
+    appBarTheme: AppBarTheme(
+      backgroundColor: colors.background,
+      foregroundColor: colors.textPrimary,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      titleTextStyle: TextStyle(
+        fontSize: AppFontSize.h2,
+        fontWeight: FontWeight.w700,
+        color: colors.textPrimary,
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: colors.surface,
+      contentPadding: const EdgeInsets.all(AppSpacing.lg),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        borderSide: BorderSide(color: colors.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        borderSide: BorderSide(color: colors.border),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        foregroundColor: Colors.white,
+        textStyle: const TextStyle(
+          fontSize: AppFontSize.body,
+          fontWeight: FontWeight.w600,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radius),
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(48, 48),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radius),
+        ),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppSpacing.xl),
+        ),
+      ),
+    ),
     textTheme: TextTheme(
       displayLarge: TextStyle(
         fontSize: AppFontSize.display,
@@ -60,6 +122,26 @@ ThemeData buildTheme(AppColors colors) {
     ),
     extensions: <ThemeExtension<dynamic>>[AppColorsExtension(colors)],
   );
+}
+
+class _ReducedMotionPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _ReducedMotionPageTransitionsBuilder();
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => MediaQuery.disableAnimationsOf(context)
+      ? child
+      : const FadeUpwardsPageTransitionsBuilder().buildTransitions(
+          route,
+          context,
+          animation,
+          secondaryAnimation,
+          child,
+        );
 }
 
 /// 让任意 widget 通过 `Theme.of(context).extension<AppColorsExtension>()`

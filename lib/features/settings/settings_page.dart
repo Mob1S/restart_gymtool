@@ -23,15 +23,6 @@ class SettingsPage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
       children: [
         const SizedBox(height: AppSpacing.xl),
-        Text(
-          '设置',
-          style: TextStyle(
-            fontSize: AppFontSize.h1,
-            fontWeight: FontWeight.w700,
-            color: c.textPrimary,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xl),
 
         Text(
           '外观',

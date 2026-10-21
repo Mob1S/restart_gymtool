@@ -55,7 +55,7 @@ void main() {
         isEmpty,
       );
       await migrate(db);
-      expect(await getSchemaVersion(db), 9);
+      expect(await getSchemaVersion(db), 11);
       await syncExerciseCatalog(db);
       expect(await listExercises(db), hasLength(71));
     },

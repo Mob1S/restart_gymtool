@@ -13,6 +13,7 @@ class BarTracker : AutoCloseable {
     private var points = emptyList<Point>()
     private var center: Point? = null
     private var radius = 0.0
+    private var template: Mat? = null
     private fun median(values: List<Double>) = values.sorted()[values.size / 2]
 
     fun update(bitmap: Bitmap, anchor: Map<String, Any?>?): Point? {
@@ -26,6 +27,7 @@ class BarTracker : AutoCloseable {
                 center = Point((anchor["x"] as Number).toDouble() * gray.cols(), (anchor["y"] as Number).toDouble() * gray.rows())
                 radius = (anchor["radius"] as Number).toDouble() * min(gray.cols(), gray.rows())
                 points = features(gray, center!!)
+                template?.release(); template = patch(gray, center!!)
                 // A user anchor is an observed point even when the region has no usable texture.
             } else if (previous != null && center != null && points.size >= 4) {
                 val from = MatOfPoint2f(*points.toTypedArray())
@@ -51,6 +53,19 @@ class BarTracker : AutoCloseable {
                         val spread = median(good.map { hypot(ns[it].x - points[it].x - dx, ns[it].y - points[it].y - dy) })
                         val c = Point(center!!.x + dx, center!!.y + dy)
                         center = if (spread > 2.5 || hypot(dx, dy) > radius || c.x !in 0.0..gray.cols().toDouble() || c.y !in 0.0..gray.rows().toDouble()) null else c
+                        if (center != null) {
+                            val candidate = patch(gray, center!!)
+                            val score = Mat()
+                            try {
+                                if (candidate == null || template == null || candidate.size() != template!!.size()) center = null
+                                else {
+                                    Imgproc.matchTemplate(candidate, template, score, Imgproc.TM_CCOEFF_NORMED)
+                                    val similarity = score.get(0, 0)[0]
+                                    if (!similarity.isFinite() || similarity < .65) center = null
+                                    else Core.addWeighted(template, .95, candidate, .05, 0.0, template)
+                                }
+                            } finally { candidate?.release(); score.release() }
+                        }
                         points = if (center == null) emptyList() else good.map { ns[it] }
                         // Replenish only after a valid step and only in the target region.
                         if (center != null && points.size < 12) points = features(gray, center!!)
@@ -63,6 +78,14 @@ class BarTracker : AutoCloseable {
         } finally { gray.release() }
     }
 
+    private fun patch(gray: Mat, c: Point): Mat? {
+        val r = max(3, (radius * .65).roundToInt())
+        val x = c.x.roundToInt() - r; val y = c.y.roundToInt() - r
+        if (x < 0 || y < 0 || x + 2*r >= gray.cols() || y + 2*r >= gray.rows()) return null
+        val view = gray.submat(Rect(x, y, 2*r+1, 2*r+1))
+        return try { view.clone() } finally { view.release() }
+    }
+
     private fun features(gray: Mat, c: Point): List<Point> {
         val mask = Mat.zeros(gray.size(), CvType.CV_8UC1)
         val corners = MatOfPoint()
@@ -73,5 +96,5 @@ class BarTracker : AutoCloseable {
         } finally { mask.release(); corners.release() }
     }
 
-    override fun close() { previous?.release(); previous = null; points = emptyList(); center = null }
+    override fun close() { previous?.release(); previous = null; template?.release(); template = null; points = emptyList(); center = null }
 }

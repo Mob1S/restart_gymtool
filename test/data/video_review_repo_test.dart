@@ -37,21 +37,23 @@ void main() {
     expect((await repo.group('st'))!['reps'], 8);
   });
   test(
-    'successful backup restore clears media links even when set ids match',
+    'successful backup restore retains projects and clears set links',
     () async {
       final snapshot = await exportBackup(db, exportedAt: 1);
       await repo.save('st', 'private-media', {'result': 'old'});
       await restoreBackup(db, await inspectBackup(db, snapshot));
-      expect(await repo.folders(), isEmpty);
+      expect(await repo.folders(), ['private-media']);
+      expect(await repo.load('st'), isNull);
       expect((await repo.group('st'))!['reps'], 8);
     },
   );
   test('v8 upgrade preserves existing training and is repeatable', () async {
+    await db.run('DROP TABLE motion_project');
     await db.run('DROP TABLE video_review');
     await db.run("UPDATE app_meta SET value='8' WHERE key='schema_version'");
     await migrate(db);
     await migrate(db);
-    expect(await getSchemaVersion(db), 9);
+    expect(await getSchemaVersion(db), 11);
     expect((await repo.group('st'))!['weight'], 60.0);
     await repo.save('st', 'new', {'result': 'new'});
     expect(await repo.load('st'), isNotNull);
@@ -59,7 +61,7 @@ void main() {
   test(
     'new schema and saved review survive reload; original set unchanged',
     () async {
-      expect(await getSchemaVersion(db), 9);
+      expect(await getSchemaVersion(db), 11);
       await repo.save('st', 'folder1', {'result': 'a'});
       await repo.save('st', 'folder2', {'result': 'b'});
       expect((await repo.load('st'))!['folder'], 'folder2');
@@ -89,12 +91,12 @@ void main() {
     },
   );
   test(
-    'JSON backup remains training schema 8 and excludes local media',
+    'JSON backup includes beverage schema 11 and excludes local media',
     () async {
       await repo.save('st', 'private-media', {'result': 'private-result'});
       final backup = await exportBackup(db, exportedAt: 1);
-      expect(backup.schemaVersion, 8);
-      expect(backup.version, 6);
+      expect(backup.schemaVersion, 11);
+      expect(backup.version, 7);
       expect(backup.toJson().toString(), isNot(contains('private-media')));
     },
   );

@@ -54,6 +54,7 @@ flutter {
 }
 
 dependencies {
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("com.google.mediapipe:tasks-vision:0.10.32")
     implementation("org.opencv:opencv:4.12.0")
 }

@@ -1,0 +1,4 @@
+# Preserve upstream bytes for assets verified against SHA-256 manifests.
+# Upstream whitespace is retained along with the original licensed sources.
+web/beverage/vendor/** -text -whitespace
+web/motion/vendor/** -text -whitespace

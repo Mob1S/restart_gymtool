@@ -32,7 +32,6 @@ void main() {
       AppBootstrap(openDatabase: () async => db, backupFiles: files),
     );
     await settle(t);
-    await tap(t, '设置');
   }
 
   testWidgets(

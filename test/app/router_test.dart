@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:gym_tracker/app/app_shell.dart';
@@ -132,6 +133,59 @@ void main() {
       );
     }
   });
+
+  testWidgets(
+    'analysis is the middle destination and both modes work without sets at 360px',
+    (tester) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('gym_tracker/review_progress'),
+            (_) async => null,
+          );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('gym_tracker/review'),
+            (_) async => null,
+          );
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              const MethodChannel('gym_tracker/review_progress'),
+              null,
+            );
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              const MethodChannel('gym_tracker/review'),
+              null,
+            );
+      });
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final exec = await seededDb(tester);
+      addTearDown(exec.close);
+      final router = await pumpApp(tester, exec);
+      router.go('/analysis');
+      await settleReal(tester);
+      var nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
+      expect(nav.destinations.length, 5);
+      expect(nav.selectedIndex, 2);
+      expect(find.text('导入视频'), findsOneWidget);
+      expect(find.text('实时拍摄'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      for (final path in ['/analysis/import', '/analysis/camera']) {
+        router.go(path);
+        await settleReal(tester);
+        nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
+        expect(nav.selectedIndex, 2);
+        expect(find.byType(AppShell), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpWidget(const SizedBox());
+      await settleReal(tester);
+    },
+  );
 
   testWidgets('⭐ 详情页在外壳外：/history/:id 不被 /history 抢走', (tester) async {
     final exec = await seededDb(tester);

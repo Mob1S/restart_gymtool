@@ -61,6 +61,11 @@ class _BackupPreviewDialogState extends State<BackupPreviewDialog> {
               Text('计划：${incoming.rows('templates').length} 个'),
               Text('动作偏好 ${incoming.rows('exercisePreferences').length} 项'),
               Text(
+                incoming.hasBeverages
+                    ? '饮料库：本机 ${current.rows('beverages').length} → 备份 ${incoming.rows('beverages').length}；饮用记录：本机 ${current.rows('drinkRecords').length} → 备份 ${incoming.rows('drinkRecords').length}。恢复后替换。'
+                    : '旧备份没有饮料数据，本机 ${current.rows('beverages').length} 款饮料和 ${current.rows('drinkRecords').length} 条饮用记录将保留。',
+              ),
+              Text(
                 incoming.version < 3
                     ? '旧备份将收藏、调重幅度和器械备忘恢复为默认。'
                     : '本机收藏、调重幅度和器械备忘将一起替换。',
@@ -74,7 +79,7 @@ class _BackupPreviewDialogState extends State<BackupPreviewDialog> {
               ),
               const SizedBox(height: 12),
               const Text(
-                '这是整库恢复，会替换本机的动作库、训练记录和训练计划；备份含偏好时也会替换偏好。新建或编辑计划请使用「训练计划」。本机视频复盘也会清除，JSON 备份不包含复盘视频和分析结果。',
+                '这是整库恢复，会替换本机的动作库、训练记录和训练计划；备份含偏好时也会替换偏好。新建或编辑计划请使用「训练计划」。本机动作分析项目保留，并解除原有组关联。JSON 备份不包含视频和分析结果。',
               ),
               const SizedBox(height: 12),
               Text('将用备份中的 $count 场训练替换本机的 $localCount 场训练。建议先导出当前数据。'),

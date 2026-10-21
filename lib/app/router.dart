@@ -1,7 +1,12 @@
 import 'package:go_router/go_router.dart';
+import 'package:flutter/material.dart';
+
+import '../features/calories/calories_page.dart';
 
 import '../features/history/history_page.dart';
-import '../features/review/video_review_page.dart';
+import '../features/analysis/analysis_home_page.dart';
+import '../features/analysis/analysis_session_page.dart';
+import '../features/analysis/motion_catalog_page.dart';
 import '../features/history/session_detail_page.dart';
 import '../features/progress/exercise_detail_page.dart';
 import '../features/progress/progress_page.dart';
@@ -25,8 +30,37 @@ GoRouter buildRouter() => GoRouter(
   initialLocation: '/',
   routes: [
     GoRoute(
+      path: '/settings',
+      builder: (context, state) => Scaffold(
+        appBar: AppBar(
+          title: const Text('设置'),
+          leading: BackButton(
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                final from = state.uri.queryParameters['from'];
+                context.go(
+                  {
+                        '/',
+                        '/calories',
+                        '/analysis',
+                        '/history',
+                        '/progress',
+                      }.contains(from)
+                      ? from!
+                      : '/',
+                );
+              }
+            },
+          ),
+        ),
+        body: const SafeArea(child: SettingsPage()),
+      ),
+    ),
+    GoRoute(
       path: '/review/:setId',
-      builder: (_, s) => VideoReviewPage(setId: s.pathParameters['setId']!),
+      redirect: (_, s) => '/analysis/group/${s.pathParameters['setId']!}',
     ),
     GoRoute(path: '/plans', builder: (_, _) => const PlanListPage()),
     GoRoute(path: '/plans/builtin', builder: (_, _) => const BuiltinPlanPage()),
@@ -51,6 +85,42 @@ GoRouter buildRouter() => GoRouter(
       builder: (context, state, child) => AppShell(child: child),
       routes: [
         GoRoute(path: '/', builder: (_, _) => const WorkoutHomePage()),
+        GoRoute(path: '/calories', builder: (_, _) => const CaloriesPage()),
+        GoRoute(path: '/analysis', builder: (_, _) => const AnalysisHomePage()),
+        GoRoute(
+          path: '/analysis/catalog',
+          builder: (_, _) => const MotionCatalogPage(),
+        ),
+        GoRoute(
+          path: '/analysis/catalog/:id',
+          builder: (_, s) =>
+              MotionDetailPage(motionId: s.pathParameters['id']!),
+        ),
+        GoRoute(
+          path: '/analysis/import',
+          builder: (_, s) =>
+              AnalysisSessionPage(motionId: s.uri.queryParameters['motion']),
+          onExit: (_, _) => analysisExitGuard?.call() ?? true,
+        ),
+        GoRoute(
+          path: '/analysis/camera',
+          builder: (_, s) => AnalysisSessionPage(
+            mode: 'camera',
+            motionId: s.uri.queryParameters['motion'],
+          ),
+          onExit: (_, _) => analysisExitGuard?.call() ?? true,
+        ),
+        GoRoute(
+          path: '/analysis/project/:id',
+          builder: (_, s) =>
+              AnalysisSessionPage(projectId: s.pathParameters['id']),
+          onExit: (_, _) => analysisExitGuard?.call() ?? true,
+        ),
+        GoRoute(
+          path: '/analysis/group/:id',
+          builder: (_, s) => AnalysisSessionPage(setId: s.pathParameters['id']),
+          onExit: (_, _) => analysisExitGuard?.call() ?? true,
+        ),
         GoRoute(
           path: '/history',
           builder: (_, state) {
@@ -63,7 +133,6 @@ GoRouter buildRouter() => GoRouter(
           },
         ),
         GoRoute(path: '/progress', builder: (_, _) => const ProgressPage()),
-        GoRoute(path: '/settings', builder: (_, _) => const SettingsPage()),
       ],
     ),
     // 记录页与总结页**不在标签外壳里** —— 它们要占满全屏
