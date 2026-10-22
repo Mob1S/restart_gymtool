@@ -2,7 +2,9 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
-import '../../data/files/beverage_ocr.dart';
+import '../../plugins/flutter/plugin_media_adapter.dart';
+import '../../plugins/api/plugin_runtime.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
 import '../../domain/beverage.dart';
 import '../../domain/beverage_label_parser.dart';
 import '../../ui/tokens.dart';
@@ -18,15 +20,24 @@ class BeverageEditorPage extends StatefulWidget {
 
 class _BeverageEditorPageState extends State<BeverageEditorPage> {
   var _key = GlobalKey<BeverageFormState>();
-  final _ocr = BeverageOcr();
+  late final _ocr = beverageOcr(context);
   Uint8List? _image;
   BeverageLabelDraft? _draft;
   String? _message, _raw;
   bool _scanning = false;
   int _generation = 0;
+  void Function()? _removeActivity;
   @override
   void initState() {
     super.initState();
+    final ocr = _ocr;
+    _removeActivity = caloriesActivities(context)?.register(
+      () => _scanning ? StopDecision.busy : StopDecision.unsavedChanges,
+      () async {
+        _generation++;
+        await ocr.cancel();
+      },
+    );
     if (widget.scanCamera != null) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _scan(widget.scanCamera!),
@@ -146,6 +157,7 @@ class _BeverageEditorPageState extends State<BeverageEditorPage> {
   );
   @override
   void dispose() {
+    _removeActivity?.call();
     _generation++;
     _ocr.cancel();
     _image = null;

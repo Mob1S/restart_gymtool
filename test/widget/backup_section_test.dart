@@ -76,6 +76,7 @@ void main() {
       return;
     }
     await tester.ensureVisible(find.text(text));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(text));
     await settle(tester);
   }
@@ -83,7 +84,7 @@ void main() {
   testWidgets('real export button saves parseable snapshot', (tester) async {
     await pumpSection(tester);
     await tap(tester, '导出备份');
-    expect(decodeBackup(files.savedBytes!).schemaVersion, 11);
+    expect(decodeBackup(files.savedBytes!).schemaVersion, 12);
     expect(find.text('备份已保存'), findsOneWidget);
   });
 
@@ -237,6 +238,13 @@ void main() {
               !session.loading &&
               find.byType(AlertDialog).evaluate().isEmpty &&
               find.byType(WorkoutHomePage).evaluate().isNotEmpty) {
+            // A restore toast can cover settings actions after the new plugin
+            // management row. Dismiss it before beginning the next restore.
+            final toast = find.byType(SnackBar);
+            if (toast.evaluate().isNotEmpty) {
+              await tester.drag(toast.first, const Offset(0, 200));
+              await tester.pumpAndSettle();
+            }
             return;
           }
         }

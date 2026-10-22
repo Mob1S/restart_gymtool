@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../domain/weight_value.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
 import '../../state/active_session_controller.dart';
 import '../../state/exercise_preferences_controller.dart';
 import 'edit_set_sheet.dart';
@@ -40,15 +41,14 @@ Future<void> showCompletedSetsSheet(
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          tooltip: '视频复盘',
-                          icon: const Icon(Icons.video_library_outlined),
-                          onPressed: controller.writing
-                              ? null
-                              : () => context.push(
-                                  '/review/${Uri.encodeComponent(set.id)}',
-                                ),
-                        ),
+                        for (final action in trainingSetActions(context))
+                          IconButton(
+                            tooltip: action.label,
+                            icon: Icon(action.icon),
+                            onPressed: controller.writing
+                                ? null
+                                : () => context.push(action.route(set.id)),
+                          ),
                         const Icon(Icons.edit_outlined),
                       ],
                     ),

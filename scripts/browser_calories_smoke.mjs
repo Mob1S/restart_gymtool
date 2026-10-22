@@ -3,9 +3,11 @@ import path from 'node:path';
 import {readFile,writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
+import {enableBundledPlugins} from './browser_plugin_helpers.mjs';
 
 export async function run(h) {
   const {check,send,evaluate,expectText,clickText} = h;
+  await enableBundledPlugins(h);
   async function navigate(route='/calories') {
     await send('Page.navigate',{url:h.origin+'/#'+route});
     await h.until(()=>h.has('训练'),'main navigation');
@@ -43,6 +45,7 @@ export async function run(h) {
       const response=await fetch(source,{signal:AbortSignal.timeout(25000)});assert(response.ok);
       const file=path.join(h.output,'actual-package-label.jpg');await writeFile(file,Buffer.from(await response.arrayBuffer()));
       await navigate();await press('记录饮料');await press('手动添加');
+      await evaluate(`gymPluginRuntime.load('beverage')`);
       await evaluate(`(()=>{window.ocrEvidence=[];const scan=gymBeverage.scan.bind(gymBeverage);gymBeverage.scan=async camera=>{const start=performance.now();const result=await scan(camera);ocrEvidence.push({elapsedMs:performance.now()-start,text:JSON.parse(result)?.text});return result;};return true})()`);
       await h.chooseImage('导入标签图片',file);await h.until(()=>evaluate('ocrEvidence.length>0'),'actual local photo OCR',120000);await delay(500);
       const evidence=await evaluate('ocrEvidence');assert(evidence[0].text?.trim());
@@ -66,8 +69,8 @@ export async function run(h) {
     await press('确认资料'); await press('0.5 份'); await expectText('69.3');
     await press('保存记录'); await expectText('69.3 kcal');
     await h.screenshot('02-recorded');
-    baseline=await h.exportFile('beverage-v7');
-    assert.equal(baseline.data.version,7); assert.equal(baseline.data.schemaVersion,11);
+    baseline=await h.exportFile('beverage-v8');
+    assert.equal(baseline.data.version,8); assert.equal(baseline.data.schemaVersion,12);
     assert.equal(baseline.data.data.beverages.length,1); assert.equal(baseline.data.data.drinkRecords.length,1);
     const record=JSON.parse(baseline.data.data.drinkRecords[0].payload);
     assert.equal(record.amount,'0.5');assert.equal(record.calories,'693/10');assert.equal(record.snapshot.energyValue,'42');
@@ -85,6 +88,7 @@ export async function run(h) {
     await press('近 30 天');await h.screenshot('03-trends-30');await clickText('Back',true);
   });
   await check('local Chinese OCR image input reaches review and cancel never persists',async()=>{
+    await evaluate(`gymPluginRuntime.load('beverage')`);
     await evaluate(`(()=>{window.ocrEvidence=[];const scan=gymBeverage.scan.bind(gymBeverage);gymBeverage.scan=async camera=>{const start=performance.now();const result=await scan(camera);const data=JSON.parse(result);ocrEvidence.push({elapsedMs:performance.now()-start,text:data?.text??null});return result;};return true})()`);
     const png=await evaluate(`(()=>{const c=document.createElement('canvas');c.width=1300;c.height=740;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,c.width,c.height);x.fillStyle='black';x.font='64px "Microsoft YaHei", sans-serif';['可口可乐','营养成分表','每100毫升','能量 180 kJ','净含量 330 mL'].forEach((s,i)=>x.fillText(s,60,100+i*125));return c.toDataURL('image/png').split(',')[1]})()`);
     const file=path.join(h.output,'controlled-label.png');await writeFile(file,Buffer.from(png,'base64'));
@@ -123,7 +127,7 @@ export async function run(h) {
   });
   await check('legacy restore preview preserves beverages and current history',async()=>{
     const before=await h.exportFile('before-old-restore');
-    const old=structuredClone(before.data);old.version=6;old.schemaVersion=8;delete old.data.beverages;delete old.data.drinkRecords;
+    const old=structuredClone(before.data);old.version=6;old.schemaVersion=8;delete old.plugins;delete old.data.beverages;delete old.data.drinkRecords;
     const file=path.join(h.output,'legacy-v6.json');await writeFile(file,JSON.stringify(old));
     await h.selectFile(file);await expectText('旧备份没有饮料数据');await clickText('替换并恢复',true);await expectText('开始训练');
     const after=await h.exportFile('after-old-restore');assert.deepEqual(after.data.data.beverages,before.data.data.beverages);assert.deepEqual(after.data.data.drinkRecords,before.data.data.drinkRecords);

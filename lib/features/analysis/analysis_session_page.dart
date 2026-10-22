@@ -6,17 +6,15 @@ import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../data/files/motion_bridge.dart';
-import '../../data/repositories/executor_access.dart';
-import '../../data/repositories/motion_project_repo.dart';
-import '../../data/repositories/video_review_repo.dart';
+import '../../plugins/api/plugin_runtime.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
+import '../../plugins/flutter/plugin_media_adapter.dart';
 import '../../domain/video_review.dart';
 import '../../domain/motion_catalog.dart';
 import '../../domain/motion_observations.dart';
 import '../../state/motion_analysis_controller.dart';
 import '../review/review_overlay.dart';
 import '../review/rep_editor.dart';
-
-Future<bool> Function()? analysisExitGuard;
 
 class AnalysisSessionPage extends StatefulWidget {
   final String mode;
@@ -46,18 +44,41 @@ class _AnalysisSessionPageState extends State<AnalysisSessionPage>
   String? bootError, linkedLabel;
   String? _playerUri;
   bool _leaving = false;
+  bool _initialized = false;
+  int _playerGeneration = 0;
   bool motionSelected = false;
+  void Function()? _removeExit, _removeActivity;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    analysisExitGuard = _leave;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    final exits = context.read<PluginExitRegistry?>();
+    if (exits != null) {
+      final route = GoRouterState.of(context).uri.path;
+      _removeExit = exits.register(route, _leave);
+    }
+    _removeActivity = motionActivities(context)?.register(() {
+      final c = controller;
+      if (loading || c?.busy == true || c?.cameraActive == true) {
+        return StopDecision.busy;
+      }
+      return c?.dirty == true
+          ? StopDecision.unsavedChanges
+          : StopDecision.ready;
+    }, _close);
     _boot();
   }
 
   Future<void> _boot() async {
     try {
-      final exec = context.read<SqlExecutor>(), repo = MotionProjectRepo(exec);
+      final repo = motionClient(context);
       final saved = widget.projectId != null
           ? await repo.load(widget.projectId!)
           : widget.setId != null
@@ -66,6 +87,7 @@ class _AnalysisSessionPageState extends State<AnalysisSessionPage>
       if (!mounted) return;
       final c = MotionAnalysisController(
         repo,
+        bridge: motionBridge(context),
         id: saved?['id'] as String?,
         setId: widget.setId,
         mode: widget.mode,
@@ -76,16 +98,20 @@ class _AnalysisSessionPageState extends State<AnalysisSessionPage>
       controller = c;
       c.addListener(_changed);
       if (saved != null) await c.open(saved);
+      if (!mounted) return;
       mirror = c.mirrored;
-      if (saved != null && mounted) await _player();
+      if (saved != null) await _player();
+      if (!mounted) return;
       if (widget.setId != null) {
-        final group = await VideoReviewRepo(exec).group(widget.setId!);
+        final group = await repo.trainingSet(widget.setId!);
+        if (!mounted) return;
         linkedLabel = group == null
             ? '原训练组已删除'
             : '训练记录：${group['weight']} kg × ${group['reps']} 次';
       }
-    } catch (e) {
-      bootError = '$e';
+    } catch (_) {
+      if (!mounted) return;
+      bootError = '无法打开分析项目，请返回后重试';
     }
     if (mounted) setState(() => loading = false);
   }
@@ -142,9 +168,26 @@ class _AnalysisSessionPageState extends State<AnalysisSessionPage>
       );
       if (leave != true) return false;
     }
-    _leaving = true;
-    if (c != null) await c.cancel();
-    return true;
+    try {
+      await _close();
+      _leaving = true;
+      return true;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('媒体关闭未完成，请重试')));
+      }
+      return false;
+    }
+  }
+
+  Future<void> _close() async {
+    _playerGeneration++;
+    await controller?.closeSession();
+    final current = player;
+    player = null;
+    current?.removeListener(_tick);
+    await current?.dispose();
   }
 
   Future<void> _import() async {
@@ -211,13 +254,14 @@ class _AnalysisSessionPageState extends State<AnalysisSessionPage>
   Future<void> _player() async {
     final c = controller!;
     if (c.uri == null || c.uri == _playerUri) return;
+    final generation = ++_playerGeneration;
     _playerUri = c.uri;
     final next = kIsWeb
         ? VideoPlayerController.networkUrl(Uri.parse(c.uri!))
         : VideoPlayerController.contentUri(Uri.parse(c.uri!));
     try {
       await next.initialize();
-      if (!mounted) {
+      if (!mounted || generation != _playerGeneration) {
         await next.dispose();
         return;
       }
@@ -226,12 +270,15 @@ class _AnalysisSessionPageState extends State<AnalysisSessionPage>
       player = next;
       next.addListener(_tick);
       await old?.dispose();
+      if (!mounted || generation != _playerGeneration) return;
       await next.seekTo(Duration(milliseconds: c.start));
-      setState(() {});
-    } catch (e) {
+      if (mounted && generation == _playerGeneration) setState(() {});
+    } catch (_) {
       await next.dispose();
-      _playerUri = null;
-      if (mounted) setState(() => bootError = '回放暂不可用：$e');
+      if (mounted && generation == _playerGeneration) {
+        _playerUri = null;
+        setState(() => bootError = '回放暂不可用，请重新打开项目');
+      }
     }
   }
 
@@ -953,8 +1000,10 @@ class _AnalysisSessionPageState extends State<AnalysisSessionPage>
 
   @override
   void dispose() {
+    _playerGeneration++;
     WidgetsBinding.instance.removeObserver(this);
-    analysisExitGuard = null;
+    _removeExit?.call();
+    _removeActivity?.call();
     player?.removeListener(_tick);
     player?.dispose();
     controller?.removeListener(_changed);

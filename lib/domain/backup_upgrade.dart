@@ -123,3 +123,26 @@ Map<String, Object?> upgradeBackupToV6(Map<String, Object?> root) {
     },
   }).toJson();
 }
+
+/// A complete format conversion needs a beverage snapshot when the legacy file
+/// omitted it. Restore itself deliberately uses V6 normalization so absent
+/// beverage/plugin sections continue to preserve the device's data.
+Map<String, Object?> upgradeBackupToV8(
+  Map<String, Object?> root, {
+  List<Map<String, Object?>> beverages = const [],
+  List<Map<String, Object?>> drinkRecords = const [],
+}) {
+  final source = validateBackup(upgradeBackupToV6(root));
+  if (source.version == 8) return source.toJson();
+  return validateBackup({
+    ...source.toJson(),
+    'version': 8,
+    'schemaVersion': 12,
+    'data': {
+      ...source.data,
+      if (!source.hasBeverages) 'beverages': beverages,
+      if (!source.hasBeverages) 'drinkRecords': drinkRecords,
+    },
+    'plugins': <String, Object?>{},
+  }).toJson();
+}

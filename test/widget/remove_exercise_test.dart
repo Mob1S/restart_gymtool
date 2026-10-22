@@ -18,6 +18,9 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
 import 'backup_section_test.dart' show settle;
+import '../support/async_ui.dart';
+
+import 'package:gym_tracker/ui/widgets/primary_button.dart';
 
 class _Wake extends WakelockPlusPlatformInterface {
   @override
@@ -123,8 +126,26 @@ void main() {
       });
       await t.pumpWidget(AppBootstrap(openDatabase: () async => db));
       await settle(t);
+      await pumpUntil(
+        t,
+        () => find
+            .byWidgetPredicate(
+              (w) =>
+                  w is PrimaryButton &&
+                  w.label == '开始训练' &&
+                  w.onPressed != null,
+            )
+            .evaluate()
+            .isNotEmpty,
+        description: 'ready training plan',
+      );
       await t.tap(find.text('开始训练'));
       await settle(t);
+      await pumpUntil(
+        t,
+        () => find.byType(WorkoutValueInput).evaluate().isNotEmpty,
+        description: 'resumed workout record',
+      );
       expect(
         t
             .widget<WorkoutValueInput>(find.byType(WorkoutValueInput))

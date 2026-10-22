@@ -38,7 +38,7 @@ export async function run(h) {
     await add('上肢',false,true); await add('恢复一',true); await add('恢复二',true); await add('下肢');
     await visible('保存'); await clickText('Back'); await expectText('上肢');
     baseline=await h.exportFile('01-created-cycle');
-    assert.equal(baseline.data.version,7); assert.equal(baseline.data.schemaVersion,11);
+    assert.equal(baseline.data.version,8); assert.equal(baseline.data.schemaVersion,12);
     const days=baseline.data.data.templates.slice().sort((a,b)=>a.position-b.position);
     assert.deepEqual(days.map(d=>d.kind),['training','rest','rest','training']);
     assert(baseline.data.data.plans[0].activatedOn);

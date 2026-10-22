@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 
-import '../../data/repositories/executor_access.dart';
-import '../../data/repositories/motion_project_repo.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
 import '../../ui/widgets/app_card.dart';
 import '../../domain/motion_catalog.dart';
 
@@ -14,7 +12,7 @@ class AnalysisHomePage extends StatefulWidget {
 }
 
 class _AnalysisHomePageState extends State<AnalysisHomePage> {
-  late final projects = MotionProjectRepo(context.read<SqlExecutor>()).list();
+  late final projects = motionClient(context).list();
   @override
   Widget build(BuildContext context) => Scaffold(
     body: ListView(

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../state/record_management_controller.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
 import 'delete_session_dialog.dart';
 import '../../state/data_revision_loader.dart';
 
@@ -112,8 +113,11 @@ class _SessionDetailPageState extends State<SessionDetailPage>
           ),
         SessionSummaryView(
           summary: summary,
-          onReview: (set) =>
-              context.push('/review/${Uri.encodeComponent(set.id)}'),
+          onReview: trainingSetActions(context).isEmpty
+              ? null
+              : (set) => context.push(
+                  trainingSetActions(context).first.route(set.id),
+                ),
           onEdit: (set, name, index) async {
             await showHistoricalSetEditor(
               context,

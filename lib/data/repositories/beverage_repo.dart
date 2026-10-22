@@ -2,11 +2,11 @@ import '../../domain/beverage.dart';
 import '../../domain/local_date.dart';
 import '../db/sql_executor.dart';
 import 'backup_repo.dart';
-import '../../domain/backup_codec.dart';
 
 class BeverageRepo {
   final SqlExecutor exec;
-  const BeverageRepo(this.exec);
+  final void Function()? ensureActive;
+  const BeverageRepo(this.exec, {this.ensureActive});
   Future<List<Beverage>> library({bool includeArchived = false}) async {
     final rows = await exec.all<Map<String, Object?>>(
       'SELECT b.id,b.payload,MAX(r.occurred_at) AS recent FROM beverage b LEFT JOIN drink_record r ON r.beverage_id=b.id GROUP BY b.id,b.payload',
@@ -41,7 +41,8 @@ class BeverageRepo {
 
   Future<void> _bounded(SqlExecutor tx) async {
     // Use exactly the same nested-record and byte limits as export/restore.
-    encodeBackup(await readBackupSnapshot(tx, exportedAt: 0));
+    await ensureBackupCapacity(tx);
+    ensureActive?.call();
   }
 
   Future<void> _saveBeverage(SqlExecutor tx, Beverage b) => tx.run(
@@ -61,6 +62,9 @@ class BeverageRepo {
         );
         await _bounded(tx);
       });
-  Future<void> deleteRecord(String id) =>
-      exec.run('DELETE FROM drink_record WHERE id=?', [id]);
+  Future<void> deleteRecord(String id) => exec.transaction((tx) async {
+    ensureActive?.call();
+    await tx.run('DELETE FROM drink_record WHERE id=?', [id]);
+    ensureActive?.call();
+  });
 }

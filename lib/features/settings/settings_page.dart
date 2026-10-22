@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../data/repositories/settings_repo.dart';
 import '../../state/theme_controller.dart';
 import '../../state/backup_controller.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
+import '../../plugins/runtime/plugin_manager.dart';
 import 'backup_section.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
@@ -22,6 +25,20 @@ class SettingsPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screenH),
       children: [
+        const SizedBox(height: AppSpacing.xl),
+
+        AppCard(
+          child: Material(
+            type: MaterialType.transparency,
+            child: ListTile(
+              leading: const Icon(Icons.extension_outlined),
+              title: const Text('插件管理'),
+              subtitle: const Text('启停饮料热量和动作分析，保留已有数据'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push('/settings/plugins'),
+            ),
+          ),
+        ),
         const SizedBox(height: AppSpacing.xl),
 
         Text(
@@ -66,6 +83,24 @@ class SettingsPage extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
         ],
         const SizedBox(height: 24),
+        for (final section
+            in context.read<PluginUiRegistry?>()?.settingsSections(
+                  context.watch<PluginManager?>(),
+                ) ??
+                <PluginSettingsSection>[])
+          AppCard(
+            child: Material(
+              type: MaterialType.transparency,
+              child: ListTile(
+                title: Text(section.label),
+                subtitle: section.description.isEmpty
+                    ? null
+                    : Text(section.description),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(section.route),
+              ),
+            ),
+          ),
       ],
     );
   }

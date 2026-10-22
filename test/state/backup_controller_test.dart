@@ -217,4 +217,42 @@ void main() {
       expect(controller.message, contains('未改动数据'));
     },
   );
+  test(
+    'restore coordinator wraps the atomic write and always releases pause',
+    () async {
+      controller.dispose();
+      final events = <String>[];
+      controller = BackupController(
+        exec: exec,
+        files: files,
+        onRestored: () async {
+          events.add('refresh');
+        },
+        beforeRestore: () async {
+          events.add('prepare');
+        },
+        coordinateRestore: (action) async {
+          events.add('pause');
+          try {
+            await action();
+            events.add('commit');
+          } finally {
+            events.add('resume');
+          }
+        },
+      );
+      files.useFixture();
+      await controller.selectBackupFile();
+      expect(await controller.confirmRestore(), BackupRestoreResult.restored);
+      expect(events, ['prepare', 'pause', 'commit', 'resume', 'refresh']);
+      events.clear();
+      await controller.selectBackupFile();
+      await setSetting(exec, 'theme_mode', 'light');
+      expect(
+        await controller.confirmRestore(),
+        BackupRestoreResult.notRestored,
+      );
+      expect(events, ['prepare', 'pause', 'resume']);
+    },
+  );
 }

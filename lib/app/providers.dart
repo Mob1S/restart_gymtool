@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +18,18 @@ import '../state/exercise_preferences_controller.dart';
 import '../state/backup_controller.dart';
 import '../state/data_revision.dart';
 import '../state/video_review_cleanup.dart';
+import '../data/files/beverage_ocr.dart';
+import '../data/files/motion_bridge.dart';
+import '../data/repositories/plugin_state_repo.dart';
+import '../data/repositories/plugin_document_repo.dart';
+import '../plugins/api/plugin_runtime.dart';
+import '../plugins/bundled/bundled_catalog.dart';
+import '../plugins/flutter/plugin_ui_adapter.dart';
+import '../plugins/host/legacy_feature_services.dart';
+import '../plugins/host/plugin_host.dart';
+import '../plugins/host/scoped_plugin_store.dart';
+import '../plugins/runtime/feature_activity.dart';
+import '../plugins/runtime/plugin_manager.dart';
 import '../data/repositories/video_review_repo.dart';
 import '../state/import_controller.dart';
 import '../state/plan_controller.dart';
@@ -30,7 +45,13 @@ import 'router.dart';
 class AppBootstrap extends StatefulWidget {
   final Future<SqlExecutor> Function()? openDatabase;
   final BackupFileStore? backupFiles;
-  const AppBootstrap({super.key, this.openDatabase, this.backupFiles});
+  final String? pluginPlatform;
+  const AppBootstrap({
+    super.key,
+    this.openDatabase,
+    this.backupFiles,
+    this.pluginPlatform,
+  });
 
   @override
   State<AppBootstrap> createState() => _AppBootstrapState();
@@ -48,6 +69,11 @@ class _AppBootstrapState extends State<AppBootstrap> {
   final _revision = DataRevision();
   Object? _error;
   VideoReviewCleanup? _reviewCleanup;
+  PluginManager? _plugins;
+  PluginUiRegistry? _pluginUi;
+  PluginFeatureAccess? _featureAccess;
+  final _exits = PluginExitRegistry();
+  final _pluginEvents = StreamController<JsonMap>.broadcast();
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
   Future<String?> _syncCatalog(SqlExecutor exec) async {
@@ -79,18 +105,43 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
   /// **router 只建一次。** 写在 `build()` 里的话每次重建都会新建一个
   /// `GoRouter`，导航栈会被整个丢掉。
-  late final _router = buildRouter();
+  GoRouter? _appRouter;
+  String? _initialLocation;
+  GoRouter get _router => _appRouter ??= buildRouter(
+    plugins: _plugins,
+    registry: _pluginUi,
+    exits: _exits,
+    initialLocation: _initialLocation,
+  );
+
+  void _pluginsChanged() {
+    final router = _appRouter;
+    if (router == null) return;
+    final id = _pluginUi?.ownerOf(
+      router.routeInformationProvider.value.uri.path,
+    );
+    if (id != null && _plugins!.stateOf(id) == PluginState.disabled) {
+      router.go('/');
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    // The temporary loading MaterialApp may normalize the browser URL. Keep
+    // the launch target until the migrated database and route guards are ready.
+    final launch = kIsWeb
+        ? Uri.base.fragment
+        : WidgetsBinding.instance.platformDispatcher.defaultRouteName;
+    if (launch.startsWith('/') && !launch.startsWith('//')) {
+      _initialLocation = launch;
+    }
     _boot();
   }
 
   Future<void> _boot() async {
     try {
       final exec = await (widget.openDatabase ?? openAppDatabase)();
-      _reviewCleanup = VideoReviewCleanup(VideoReviewRepo(exec), _revision);
       await seedExercisesIfEmpty(exec);
       final catalogNotice = await _syncCatalog(exec);
 
@@ -101,10 +152,145 @@ class _AppBootstrapState extends State<AppBootstrap> {
         exec,
         onDataChanged: _revision.changed,
       );
+      final training = FeaturePluginRuntime(FeatureActivityRegistry());
+      final calories = FeaturePluginRuntime(
+        FeatureActivityRegistry(),
+        onStart: () => BeverageOcr().activate(),
+        onStop: () => BeverageOcr().deactivate(),
+      );
+      final motion = FeaturePluginRuntime(
+        FeatureActivityRegistry(),
+        onStart: () async {
+          await MotionBridge().activate();
+          _reviewCleanup = VideoReviewCleanup(VideoReviewRepo(exec), _revision);
+        },
+        onStop: () async {
+          await _reviewCleanup?.close();
+          _reviewCleanup = null;
+          if (MotionBridge.supported) await MotionBridge().deactivate();
+        },
+      );
+      final services = LegacyFeatureServices(exec);
+      final pluginPlatform =
+          widget.pluginPlatform ??
+          (kIsWeb ? 'web' : defaultTargetPlatform.name);
+      final plugins = PluginManager(
+        catalog: bundledCatalog(
+          training: training,
+          calories: calories,
+          motion: motion,
+        ),
+        platform: pluginPlatform,
+        loadPreferences: () => loadPluginPreferences(exec),
+        savePreference: (id, enabled) =>
+            savePluginPreference(exec, id, enabled),
+        validateData: (definition) async {
+          final version = await PluginDocumentRepo(exec)
+              .dataVersion(definition.manifest.id);
+          if (version != null &&
+              !definition.supportedDataVersions.contains(version)) {
+            throw const PluginException(
+              PluginErrorCode.invalidData,
+              '插件数据版本不兼容，原始数据已保留',
+            );
+          }
+        },
+        hostFactory: (manifest, scope) {
+          final store = ScopedPluginStore(
+            repository: PluginDocumentRepo(exec),
+            scope: scope,
+          );
+          const methods = {
+            'calories.library': 'calories.library',
+            'calories.records': 'calories.records',
+            'calories.saveBeverage': 'calories.library',
+            'calories.saveRecord': 'calories.records',
+            'calories.deleteRecord': 'calories.records',
+            'network.foodSearch': 'network.foodSearch',
+            'network.foodDetails': 'network.foodSearch',
+            'network.foodCancel': 'network.foodSearch',
+            'training.set.read': 'training.set.read',
+            'motion.projects.list': 'motion.projects',
+            'motion.projects.load': 'motion.projects',
+            'motion.projects.forSet': 'motion.projects',
+            'motion.projects.completedSets': 'motion.projects',
+            'motion.projects.save': 'motion.projects',
+            'motion.projects.delete': 'motion.projects',
+            'motion.projects.resultFiles': 'motion.projects',
+          };
+          final supportedCapabilities = {
+            ...methods.values,
+            ...store.methods.values.map((method) => method.capability),
+            if ({'android', 'web'}.contains(pluginPlatform)) ...{
+              'media.pick',
+              'camera.capture',
+            },
+          };
+          return BoundPluginHost(
+            scope: scope,
+            grantedCapabilities: {
+              ...manifest.requiredCapabilities,
+              ...manifest.optionalCapabilities,
+            }.intersection(supportedCapabilities),
+            methods: {
+              ...store.methods,
+              'storage.private.write': HostMethod(
+                capability: 'storage.private.write',
+                handle: (args) async {
+                  final result = await store.write(args);
+                  scope.ensureActive();
+                  _pluginEvents.add({
+                    'type': 'storage.private.changed',
+                    'pluginId': scope.pluginId,
+                    'payload': const <String, Object?>{},
+                  });
+                  _revision.changed();
+                  return result;
+                },
+              ),
+              for (final entry in methods.entries)
+                entry.key: HostMethod(
+                  capability: entry.value,
+                  handle: (args) => services.request(
+                    entry.key,
+                    args,
+                    ensureActive: scope.ensureActive,
+                    networkSessionPrefix:
+                        '${scope.pluginId}:${scope.generation}',
+                  ),
+                ),
+            },
+            topics: {
+              'data.changed': HostTopic(
+                capability: 'storage.private.read',
+                events: _pluginEvents.stream,
+              ),
+              'storage.private.changed': HostTopic(
+                capability: 'storage.private.read',
+                events: _pluginEvents.stream.where(
+                  (event) => event['pluginId'] == scope.pluginId,
+                ),
+              ),
+            },
+          );
+        },
+      );
+      await plugins.initialize();
+      if (!mounted) {
+        await plugins.shutdown();
+        plugins.dispose();
+        return;
+      }
+      _plugins = plugins;
+      plugins.addListener(_pluginsChanged);
+      _pluginUi = bundledUi(_exits);
+      _featureAccess = PluginFeatureAccess(calories: calories, motion: motion);
+      _revision.addListener(_publishPluginRevision);
       final backup = BackupController(
         exec: exec,
         files: widget.backupFiles ?? PlatformBackupFileStore(),
         beforeRestore: session.prepareForRestore,
+        coordinateRestore: (action) => plugins.runWithPluginsPaused(action),
         onRestored: () async {
           final catalogNotice = await _syncCatalog(exec);
           _revision.changed();
@@ -158,8 +344,8 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
     if (_error != null) {
       // 数据库打不开时也要给一个能读懂的界面，而不是白屏
-      return MaterialApp(
-        home: Scaffold(
+      return _bootstrapScreen(
+        Scaffold(
           body: Center(
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.xl),
@@ -171,14 +357,18 @@ class _AppBootstrapState extends State<AppBootstrap> {
     }
 
     if (exec == null || session == null || theme == null) {
-      return const MaterialApp(
-        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+      return _bootstrapScreen(
+        const Scaffold(body: Center(child: CircularProgressIndicator())),
       );
     }
 
     return MultiProvider(
       providers: [
         Provider<SqlExecutor>.value(value: exec),
+        ChangeNotifierProvider<PluginManager>.value(value: _plugins!),
+        Provider<PluginUiRegistry>.value(value: _pluginUi!),
+        Provider<PluginFeatureAccess>.value(value: _featureAccess!),
+        Provider<PluginExitRegistry>.value(value: _exits),
         ChangeNotifierProvider<ActiveSessionController>.value(value: session),
         ChangeNotifierProvider<ThemeController>.value(value: theme),
         ChangeNotifierProvider<ExercisePreferencesController>.value(
@@ -197,8 +387,31 @@ class _AppBootstrapState extends State<AppBootstrap> {
     );
   }
 
+  Widget _bootstrapScreen(Widget screen) => MaterialApp(
+    onGenerateRoute: (settings) =>
+        MaterialPageRoute<void>(settings: settings, builder: (_) => screen),
+    onGenerateInitialRoutes: (name) => [
+      MaterialPageRoute<void>(
+        settings: RouteSettings(name: name),
+        builder: (_) => screen,
+      ),
+    ],
+  );
+
   @override
   void dispose() {
+    final plugins = _plugins;
+    if (plugins != null) {
+      plugins.removeListener(_pluginsChanged);
+      unawaited(
+        plugins
+            .shutdown()
+            .catchError((Object _) {})
+            .whenComplete(plugins.dispose),
+      );
+    }
+    _revision.removeListener(_publishPluginRevision);
+    unawaited(_pluginEvents.close());
     _reviewCleanup?.dispose();
     _plans?.dispose();
     _records?.dispose();
@@ -208,8 +421,18 @@ class _AppBootstrapState extends State<AppBootstrap> {
     _backup?.dispose();
     _session?.dispose();
     _theme?.dispose();
-    _router.dispose();
+    _appRouter?.dispose();
     super.dispose();
+  }
+
+  void _publishPluginRevision() {
+    if (!_pluginEvents.isClosed) {
+      _pluginEvents.add({
+        'type': 'data.changed',
+        'generation': _revision.value,
+        'payload': const <String, Object?>{},
+      });
+    }
   }
 }
 

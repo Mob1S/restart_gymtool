@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/ids.dart';
-import '../../data/repositories/beverage_repo.dart';
-import '../../data/repositories/public_beverage_search.dart';
-import '../../data/repositories/executor_access.dart';
+import '../../plugins/api/feature_clients.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
+import '../../plugins/api/plugin_runtime.dart';
 import '../../domain/beverage.dart';
 import '../../domain/local_date.dart';
 import '../../state/beverage_search_controller.dart';
@@ -26,16 +26,31 @@ class BeveragePickerPage extends StatefulWidget {
 }
 
 class _BeveragePickerPageState extends State<BeveragePickerPage> {
-  final _search = BeverageSearchController();
+  late final _client = caloriesClient(context);
+  late final _search = BeverageSearchController(
+    find: _client.search,
+    onCancel: _client.cancelSearch,
+  );
   final _query = TextEditingController();
   List<Beverage>? _library;
   String? _error;
   bool _busy = false, _archived = false;
   Beverage? _pending;
-  BeverageRepo get _repo => BeverageRepo(context.read<SqlExecutor>());
+  void Function()? _removeActivity;
+  CaloriesClient get _repo => _client;
   @override
   void initState() {
     super.initState();
+    _removeActivity = caloriesActivities(context)?.register(
+      () => _busy
+          ? StopDecision.busy
+          : _pending != null
+          ? StopDecision.unsavedChanges
+          : StopDecision.ready,
+      () async {
+        await _search.cancelRequests();
+      },
+    );
     _search.addListener(_refresh);
     _load();
   }
@@ -87,7 +102,7 @@ class _BeveragePickerPageState extends State<BeveragePickerPage> {
     if (public && initial != null) {
       setState(() => _busy = true);
       try {
-        initial = await PublicBeverageSearch().details(initial);
+        initial = await _client.details(initial);
       } catch (_) {
         if (mounted) {
           ScaffoldMessenger.of(
@@ -284,6 +299,7 @@ class _BeveragePickerPageState extends State<BeveragePickerPage> {
 
   @override
   void dispose() {
+    _removeActivity?.call();
     _search.removeListener(_refresh);
     _search.dispose();
     _query.dispose();

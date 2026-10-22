@@ -4,14 +4,20 @@ import '../../domain/backup.dart';
 import '../../domain/backup_codec.dart';
 import '../../domain/backup_upgrade.dart';
 import '../db/sql_executor.dart';
+import 'plugin_backup_adapter.dart';
+
+const _pluginBackup = NamespacedPluginBackupAdapter();
 
 class BackupPreview {
   final BackupFile incoming;
   final BackupFile current;
   final String _baseline;
   BackupPreview._(this.incoming, this.current)
-    : _baseline = jsonEncode(current.data);
+    : _baseline = _baselineOf(current);
 }
+
+String _baselineOf(BackupFile file) =>
+    jsonEncode({'data': file.data, 'plugins': file.toJson()['plugins']});
 
 class _Table {
   final String name;
@@ -152,10 +158,14 @@ Future<BackupFile> _snapshot(SqlExecutor tx, int exportedAt) async =>
     validateBackup({
       'format': backupFormat,
       'version': backupVersion,
-      // v9/v10 motion media remains device-local; v11 adds beverage data only.
-      'schemaVersion': 11,
+      // Motion media remains device-local; plugin documents use schema 12.
+      'schemaVersion': 12,
       'exportedAt': exportedAt,
       'data': await _readData(tx),
+      'plugins': {
+        for (final entry in (await _pluginBackup.snapshot(tx)).entries)
+          entry.key: entry.value.toJson(),
+      },
     });
 
 /// Caller holds a transaction; never starts a nested transaction.
@@ -163,6 +173,14 @@ Future<BackupFile> readBackupSnapshot(
   SqlExecutor tx, {
   required int exportedAt,
 }) => _snapshot(tx, exportedAt);
+
+/// Enforce the combined core, beverage and extension budget inside a write.
+/// The caller owns the transaction so a capacity failure rolls back its write.
+Future<void> ensureBackupCapacity(SqlExecutor tx) async {
+  // Reserve the longest valid export timestamp, so a write at the byte boundary
+  // remains exportable when the real timestamp replaces the capacity snapshot.
+  encodeBackup(await _snapshot(tx, maxBackupTimestamp));
+}
 
 Future<BackupFile> exportBackup(
   SqlExecutor exec, {
@@ -189,7 +207,7 @@ Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
   final incoming = validateBackup(upgradeBackupToV6(preview.incoming.toJson()));
   await exec.transaction((tx) async {
     final current = await _snapshot(tx, 0);
-    if (jsonEncode(current.data) != preview._baseline) {
+    if (_baselineOf(current) != preview._baseline) {
       throw const BackupValidationException('本机数据已变化，请重新预览并确认恢复');
     }
     // Preserve local media even if incoming training IDs happen to match.
@@ -235,6 +253,9 @@ Future<void> restoreBackup(SqlExecutor exec, BackupPreview preview) async {
       await tx.run('DELETE FROM beverage');
       await _insert(tx, 'beverages', incoming.rows('beverages'));
       await _insert(tx, 'drinkRecords', incoming.rows('drinkRecords'));
+    }
+    if (incoming.plugins != null) {
+      await _pluginBackup.restore(tx, incoming.plugins!);
     }
     // Also validate retained local beverages against combined backup limits
     // when restoring a legacy file without beverage arrays.

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:gym_tracker/app/providers.dart';
 import 'package:gym_tracker/data/db/ffi_executor.dart';
 import 'package:gym_tracker/data/repositories/beverage_repo.dart';
+import 'package:gym_tracker/data/repositories/plugin_state_repo.dart';
 import 'package:gym_tracker/domain/beverage.dart';
 import 'package:gym_tracker/features/calories/beverage_editor_page.dart';
 import 'package:gym_tracker/ui/theme.dart';
@@ -14,12 +16,30 @@ import '../support/backup_fakes.dart';
 import 'backup_section_test.dart' show settle;
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late FfiExecutor db;
-  setUp(() async => db = await FfiExecutor.openMigrated());
-  tearDown(() async => db.close());
+  setUp(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('gym_tracker/review'),
+          (_) async => {'supported': false},
+        );
+    db = await FfiExecutor.openMigrated();
+    await savePluginPreference(db, 'gym.calories', true);
+    await savePluginPreference(db, 'gym.motion', true);
+  });
+  tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('gym_tracker/review'),
+          null,
+        );
+    await db.close();
+  });
   Future<void> boot(WidgetTester t) async {
     await t.pumpWidget(
       AppBootstrap(
+        pluginPlatform: 'web',
         openDatabase: () async => db,
         backupFiles: MemoryBackupFiles(),
       ),

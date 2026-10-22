@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const webRoot = path.join(root, 'build', 'web');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const feature = process.env.GYM_BROWSER_FEATURE;
-assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign', 'rest_days', 'builtin_programs', 'calories'].includes(feature));
+assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign', 'rest_days', 'builtin_programs', 'calories', 'plugins'].includes(feature));
 const output = path.join(root, 'build', 'acceptance', `browser-${feature || 'backup'}-${stamp}`);
 const chromePath = process.env.CHROME_EXECUTABLE || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -283,7 +283,7 @@ try {
     await clickText('设置', true); await clickText('深色', true);
     baseline = await exportFile('01-original-backup');
     assert.equal(baseline.data.format, 'gym-tracker-backup');
-    assert.equal(baseline.data.version, 7); assert.equal(baseline.data.schemaVersion, 11);
+    assert.equal(baseline.data.version, 8); assert.equal(baseline.data.schemaVersion, 12);
     assert.equal(baseline.data.data.sessions.length, 1);
     assert.equal(baseline.data.data.sets[0].weight, 20); assert.equal(baseline.data.data.sets[0].reps, 8);
     assert(baseline.data.data.settings.some(row => row.key === 'theme_mode' && row.value === 'dark'));
@@ -328,10 +328,13 @@ try {
       for (const key of Object.keys(expected.data)) {
         const rows = structuredClone(expected.data[key]);
         if (key === 'sessions' && name === 'legacy-v1') rows.forEach(row => { row.templateId ??= null; });
-        assert.equal(restored.data[key].length, rows.length, `${name}.${key} count`);
+        if(key==='exercises') assert(restored.data[key].length>=rows.length,`${name} retains all original exercises and syncs builtin catalog`);
+        else assert.equal(restored.data[key].length, rows.length, `${name}.${key} count`);
         for (let i=0;i<rows.length;i++) {
+          const actual=rows[i].id ? restored.data[key].find(row=>row.id===rows[i].id) : restored.data[key][i];
+          assert(actual,`${name}.${key}[${i}] identity retained`);
           for (const [field,value] of Object.entries(rows[i])) {
-            assert.deepEqual(restored.data[key][i][field], value, `${name}.${key}[${i}].${field}`);
+            assert.deepEqual(actual[field], value, `${name}.${key}[${i}].${field}`);
           }
         }
       }
@@ -343,14 +346,14 @@ try {
       await screenshot(`08-${name}`);
     }
   });
-  await check('empty backup warning, immediate refresh and persistence without reseeding', async () => {
+  await check('empty backup clears training while preserving the synchronized builtin catalog', async () => {
     const file = path.join(root, 'test', 'fixtures', 'backup', 'current-v2.json');
     await selectFile(file); await expectText('此备份没有训练记录'); await expectText('本机有进行中的训练');
     await screenshot('09-empty-warning'); await clickText('替换并恢复', true); await expectText('开始训练');
     assert(!(await has('继续')));
     await send('Page.reload');
     const restored = (await exportFile('empty-after-reload')).data;
-    assert.equal(restored.data.exercises.length, 0); assert.equal(restored.data.sessions.length, 0);
+    assert.equal(restored.data.exercises.length, 71); assert.equal(restored.data.sessions.length, 0);
     await clickText('历史', true); await expectText('还没有已完成的训练'); await screenshot('10-final-empty');
   });
   }

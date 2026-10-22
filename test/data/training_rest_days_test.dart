@@ -71,7 +71,7 @@ void main() {
       });
       await migrate(old);
       await migrate(old);
-      expect(await getSchemaVersion(old), 11);
+      expect(await getSchemaVersion(old), schemaVersion);
       expect(
         (await old.all<Map<String, Object?>>("SELECT * FROM split_template"))
             .every((r) => r['kind'] == 'training'),
@@ -103,7 +103,7 @@ void main() {
       isNot(contains('kind')),
     );
     await migrate(old);
-    expect(await getSchemaVersion(old), 11);
+    expect(await getSchemaVersion(old), schemaVersion);
   });
   test('editing/listing does not activate and activation fills once', () async {
     final p = await make(leading: true);

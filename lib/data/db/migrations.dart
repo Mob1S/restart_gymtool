@@ -5,6 +5,7 @@ import 'training_v8_migration.dart';
 import 'video_review_migration.dart';
 import 'motion_project_migration.dart';
 import 'beverage_migration.dart';
+import 'plugin_migration.dart';
 
 /// 一个版本化迁移项。
 ///
@@ -70,10 +71,11 @@ const List<Migration> migrations = [
   Migration(version: 9, statements: videoReviewStatements),
   Migration(version: 10, statements: motionProjectStatements),
   Migration(version: 11, statements: beverageStatements),
+  Migration(version: 12, statements: []),
 ];
 
 /// 当前库结构版本。必须与 [migrations] 的最后一项保持一致。
-const int schemaVersion = 11;
+const int schemaVersion = 12;
 
 /// 读出当前库结构版本。
 ///
@@ -96,12 +98,24 @@ Future<int> getSchemaVersion(SqlExecutor exec) async {
 Future<void> migrate(SqlExecutor exec) async {
   // app_meta 必须先存在，否则读不到版本号
   await exec.run(createMetaSql);
+  await recordPluginInstallOrigin(exec);
 
   final current = await getSchemaVersion(exec);
   final pending = migrations.where((m) => m.version > current).toList()
     ..sort((a, b) => a.version - b.version);
 
   for (final migration in pending) {
+    if (migration.version == 12) {
+      await exec.transaction((tx) async {
+        await migratePluginsV12(tx);
+        await tx.run(
+          "INSERT INTO app_meta(key,value) VALUES('schema_version',?) "
+          'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+          ['12'],
+        );
+      });
+      continue;
+    }
     if (migration.version >= 7) {
       await exec.transaction((tx) async {
         for (final statement in migration.statements) {

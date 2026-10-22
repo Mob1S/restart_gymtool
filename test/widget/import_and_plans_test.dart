@@ -10,6 +10,7 @@ import 'package:gym_tracker/data/repositories/template_repo.dart';
 import 'package:gym_tracker/data/repositories/session_repo.dart';
 
 import '../support/backup_fakes.dart';
+import '../support/async_ui.dart';
 import 'backup_section_test.dart' show settle;
 
 void main() {
@@ -21,6 +22,11 @@ void main() {
   });
   tearDown(() async => db.close());
   Future<void> tap(WidgetTester t, String text) async {
+    await pumpUntil(
+      t,
+      () => find.text(text).evaluate().isNotEmpty,
+      description: text,
+    );
     await t.ensureVisible(find.text(text).first);
     await t.pumpAndSettle();
     await t.tap(find.text(text).first);
@@ -32,6 +38,11 @@ void main() {
       AppBootstrap(openDatabase: () async => db, backupFiles: files),
     );
     await settle(t);
+    await pumpUntil(
+      t,
+      () => find.byType(NavigationBar).evaluate().isNotEmpty,
+      description: 'application bootstrap',
+    );
   }
 
   testWidgets(
@@ -49,6 +60,11 @@ void main() {
       await settle(t);
       await tap(t, '导入 CSV');
       await tap(t, '选择 CSV 文件');
+      await pumpUntil(
+        t,
+        () => find.text('追加 1 场训练').evaluate().isNotEmpty,
+        description: 'CSV preview',
+      );
       expect(find.text('追加 1 场训练'), findsOneWidget);
       await t.runAsync(() async {
         expect(
@@ -59,6 +75,11 @@ void main() {
       await tap(t, '取消预览');
       await tap(t, '选择 CSV 文件');
       await tap(t, '追加 1 场训练');
+      await pumpUntil(
+        t,
+        () => find.text('Import day').evaluate().isNotEmpty,
+        description: 'committed CSV appears in history',
+      );
       expect(find.text('Import day'), findsOneWidget);
       await tap(t, 'Import day');
       expect(find.textContaining('时长未知'), findsOneWidget);
@@ -71,6 +92,11 @@ void main() {
       await t.tap(find.byTooltip('删除这场训练'));
       await settle(t);
       await tap(t, '删除这场训练');
+      await pumpUntil(
+        t,
+        () => find.text('还没有已完成的训练').evaluate().isNotEmpty,
+        description: 'deleted CSV disappears from history',
+      );
       expect(find.text('还没有已完成的训练'), findsOneWidget);
       await t.pumpWidget(const SizedBox());
       await settle(t);
@@ -105,6 +131,11 @@ void main() {
       });
       await tap(t, '完成');
       await tap(t, '保存');
+      await pumpUntil(
+        t,
+        () => find.text('1 个训练日 · 0 个休息日').evaluate().isNotEmpty,
+        description: 'saved plan list',
+      );
       expect(find.text('A'), findsOneWidget);
       expect(find.text('1 个训练日 · 0 个休息日'), findsOneWidget);
       await t.runAsync(() async {

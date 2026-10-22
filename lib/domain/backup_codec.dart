@@ -14,9 +14,50 @@ BackupFile decodeBackup(List<int> bytes) {
   try {
     var text = utf8.decode(bytes);
     if (text.startsWith('\ufeff')) text = text.substring(1);
-    return validateBackup(jsonDecode(text));
+    final decoded = jsonDecode(text);
+    _rejectDuplicateObjectKeys(text);
+    return validateBackup(decoded);
   } on FormatException {
     throw const BackupValidationException('文件不是有效的 UTF-8 JSON 备份');
+  }
+}
+
+/// jsonDecode normally silently keeps the final occurrence of a duplicate key.
+/// Scan valid JSON tokens so namespace IDs and nested document keys cannot alias.
+void _rejectDuplicateObjectKeys(String text) {
+  final containers = <Set<String>?>[];
+  var index = 0;
+  while (index < text.length) {
+    final char = text[index];
+    if (char == '{') {
+      containers.add(<String>{});
+    } else if (char == '[') {
+      containers.add(null);
+    } else if (char == '}' || char == ']') {
+      containers.removeLast();
+    } else if (char == '"') {
+      final start = index++;
+      while (index < text.length) {
+        if (text[index] == r'\') {
+          index += 2;
+        } else if (text[index] == '"') {
+          break;
+        } else {
+          index++;
+        }
+      }
+      var next = index + 1;
+      while (next < text.length && ' \r\n\t'.contains(text[next])) {
+        next++;
+      }
+      if (next < text.length && text[next] == ':') {
+        final key = jsonDecode(text.substring(start, index + 1)) as String;
+        if (!containers.last!.add(key)) {
+          throw BackupValidationException('JSON 对象包含重复 key：$key');
+        }
+      }
+    }
+    index++;
   }
 }
 

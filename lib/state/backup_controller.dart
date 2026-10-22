@@ -14,6 +14,9 @@ class BackupController extends ChangeNotifier {
   final Future<void> Function() _onRestored;
   final int Function() _now;
   final Future<void> Function()? beforeRestore;
+  final Future<void> Function()? afterRestoreAttempt;
+  final Future<void> Function(Future<void> Function() action)?
+  coordinateRestore;
 
   BackupController({
     required this._exec,
@@ -21,6 +24,8 @@ class BackupController extends ChangeNotifier {
     required this._onRestored,
     int Function()? now,
     this.beforeRestore,
+    this.afterRestoreAttempt,
+    this.coordinateRestore,
   }) : _now = now ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   bool _busy = false;
@@ -125,7 +130,12 @@ class BackupController extends ChangeNotifier {
     try {
       try {
         await beforeRestore?.call();
-        await restoreBackup(_exec, selected);
+        final coordinate = coordinateRestore;
+        if (coordinate == null) {
+          await restoreBackup(_exec, selected);
+        } else {
+          await coordinate(() => restoreBackup(_exec, selected));
+        }
       } catch (error) {
         _clearPreview();
         _message = error is BackupValidationException
@@ -144,6 +154,11 @@ class BackupController extends ChangeNotifier {
       _message = '已恢复 ${selected.incoming.rows('sessions').length} 场训练';
       return BackupRestoreResult.restored;
     } finally {
+      try {
+        await afterRestoreAttempt?.call();
+      } catch (_) {
+        _message = '恢复流程已结束，插件恢复运行失败，请重新打开应用';
+      }
       _restoring = false;
       _busy = false;
       _notify();

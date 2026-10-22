@@ -20,6 +20,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
 import java.io.File
+import java.util.concurrent.CompletableFuture
 
 /** Bundled, on-device Chinese/Latin OCR. Temporary files never enter backups. */
 class BeverageOcrPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler,
@@ -29,6 +30,8 @@ class BeverageOcrPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCall
     private var pending: MethodChannel.Result? = null
     private var photo: File? = null
     private var generation = 0
+    private val activeTasks = mutableSetOf<CompletableFuture<Unit>>()
+    private var closing = false
     private val main = Handler(Looper.getMainLooper())
     private val requestCode = 4827
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -52,11 +55,18 @@ class BeverageOcrPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCall
     override fun onDetachedFromActivity() = detach()
     private fun cancel() { generation++; pending?.success(null); pending = null; photo?.delete(); photo = null }
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        if (call.method == "cancel") { cancel(); result.success(null); return }
+        if (call.method == "cancel" || call.method == "deactivate") {
+            closing=true;cancel()
+            CompletableFuture.allOf(*activeTasks.toTypedArray()).whenComplete {_,error->main.post {
+                closing=false
+                if(error==null)result.success(null)else result.error("close_failed","标签识别资源尚未关闭",null)
+            }}
+            return
+        }
         if (call.method != "scan") { result.notImplemented(); return }
         val activity = binding?.activity
         if (activity == null) { result.error("unavailable", "没有可用的图片输入界面", null); return }
-        if (pending != null) { result.error("busy", "正在识别", null); return }
+        if (closing || pending != null) { result.error("busy", "正在识别或关闭识别资源", null); return }
         pending = result
         if (call.argument<Boolean>("camera") == true) {
             if (activity.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -96,7 +106,16 @@ class BeverageOcrPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCall
         if (uri == null) { fail("图片为空"); return true }
         val token = generation
         val tempPhoto = photo
-        Thread {
+        val task=CompletableFuture<Unit>()
+        val recognitionDone=CompletableFuture<Unit>()
+        val decoderDone=CompletableFuture<Unit>()
+        activeTasks.add(task)
+        fun completeTask(error:Throwable?=null){if(error==null)recognitionDone.complete(Unit)else recognitionDone.completeExceptionally(error)}
+        CompletableFuture.allOf(recognitionDone,decoderDone).whenComplete {_,error->main.post {
+            activeTasks.remove(task)
+            if(error==null)task.complete(Unit)else task.completeExceptionally(error)
+        }}
+        val decoder=Thread {
             try {
                 val bytes = activity.contentResolver.openInputStream(uri)?.use { stream ->
                     val buffer = java.io.ByteArrayOutputStream()
@@ -114,17 +133,31 @@ class BeverageOcrPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCall
                 if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth.toLong() * bounds.outHeight > 24000000) throw IllegalArgumentException("请使用不超过 2400 万像素的清晰图片")
                 val image = InputImage.fromFilePath(activity, uri)
                 main.post {
-                    if (token != generation || pending == null) { tempPhoto?.delete(); return@post }
+                    if (token != generation || pending == null) { tempPhoto?.delete();completeTask(); return@post }
+                    try {
                     val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
                     recognizer.process(image)
                         .addOnSuccessListener { text ->
                             if (token == generation) { pending?.success(mapOf("text" to text.text, "image" to bytes)); pending = null }
                         }
                         .addOnFailureListener { e -> if (token == generation) fail("标签识别失败：${e.localizedMessage}") }
-                        .addOnCompleteListener { recognizer.close(); tempPhoto?.delete(); if (photo == tempPhoto) photo = null }
+                        .addOnCompleteListener {
+                            try {recognizer.close();tempPhoto?.delete();if(photo==tempPhoto)photo=null;completeTask()}
+                            catch(error:Throwable){completeTask(error)}
+                        }
+                    }catch(e:Exception){if(token==generation)fail("标签识别失败");tempPhoto?.delete();completeTask()}
                 }
-            } catch (e: Exception) { main.post { if (token == generation) fail(e.localizedMessage ?: "无法识别图片"); tempPhoto?.delete() } }
-        }.start()
+            } catch (e: Exception) { main.post { if (token == generation) fail(e.localizedMessage ?: "无法识别图片"); tempPhoto?.delete();completeTask() } }
+        }
+        try {
+            decoder.start()
+            // A posted main-thread callback can run before Thread.run returns.
+            // Join off the UI thread so cancellation confirms its actual exit.
+            CompletableFuture.runAsync {
+                try {decoder.join();decoderDone.complete(Unit)}
+                catch(error:Throwable){decoderDone.completeExceptionally(error)}
+            }
+        }catch(error:Throwable){decoderDone.completeExceptionally(error);completeTask(error)}
         return true
     }
 }

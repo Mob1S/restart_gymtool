@@ -17,6 +17,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** acquireLatestImage + one worker slot bounds memory and latency at the source. */
@@ -32,6 +33,11 @@ class MotionCamera(private val activity: Activity, private val worker: ExecutorS
     private var reader: ImageReader?=null
     private var engine: MotionEngine?=null
     @Volatile private var closed=false
+    @Volatile private var opening=false
+    private val deviceClosed=CompletableFuture<Unit>()
+    private val closedFuture=CompletableFuture<Unit>()
+    private var openResult:((Map<String,Any?>?,String?)->Unit)?=null
+    private var startResult:((String?)->Unit)?=null
     @Volatile private var recording=false
     @Volatile private var anchor: Map<String,Any?>?=null
     private var session=""
@@ -50,8 +56,10 @@ class MotionCamera(private val activity: Activity, private val worker: ExecutorS
     @Volatile private var frozen=false
     private var lastBitmap:android.graphics.Bitmap?=null
     fun open(id: String?, session: String, done: (Map<String,Any?>?,String?)->Unit) {
+        openResult=done
+        fun complete(value:Map<String,Any?>?,error:String?){val callback=openResult;openResult=null;callback?.invoke(value,error)}
         this.session=session
-        if(activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED) {done(null,"摄像头权限被拒绝，请在系统设置中允许");return}
+        if(activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED) {complete(null,"摄像头权限被拒绝，请在系统设置中允许");close();return}
         try {
             val selected=id ?: manager.cameraIdList.firstOrNull {manager.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING)==CameraCharacteristics.LENS_FACING_BACK}
                 ?: manager.cameraIdList.firstOrNull() ?: error("没有可用摄像头")
@@ -67,7 +75,7 @@ class MotionCamera(private val activity: Activity, private val worker: ExecutorS
             size=config.getOutputSizes(ImageFormat.YUV_420_888).filter {candidate->recordSizes.any {it==candidate} && candidate.width<=1280 && candidate.height<=720}
                 .minByOrNull {kotlin.math.abs(it.width-640)+kotlin.math.abs(it.height-480)} ?: error("摄像头不支持兼容的预览与录像尺寸")
             origin=SystemClock.elapsedRealtimeNanos()
-            worker.execute {try {engine=MotionEngine(activity)}catch(e:Exception){emit(mapOf("session" to session,"error" to e.message,"phase" to "failed"))}}
+            worker.execute {try {if(!closed)engine=MotionEngine(activity)}catch(e:Exception){emit(mapOf("session" to session,"error" to e.message,"phase" to "failed"))}}
             reader=ImageReader.newInstance(size.width,size.height,ImageFormat.YUV_420_888,3).also {it.setOnImageAvailableListener({source->
                 val image=try {source.acquireLatestImage()}catch(_:Exception){null} ?: return@setOnImageAvailableListener
                 if(closed||frozen||!processing.compareAndSet(false,true)){image.close();if(!frozen)dropped++;return@setOnImageAvailableListener}
@@ -96,14 +104,16 @@ class MotionCamera(private val activity: Activity, private val worker: ExecutorS
                     finally {image.close();processing.set(false)}
                 }
             },handler)}
+            opening=true
             manager.openCamera(selected,object:CameraDevice.StateCallback(){
                 override fun onOpened(device:CameraDevice){if(closed){device.close();return};camera=device;configure {error->
-                    done(if(error==null) mapOf("canRecord" to true,"devices" to manager.cameraIdList.map {mapOf("id" to it,"label" to "摄像头 $it")}) else null,error)
+                    complete(if(error==null) mapOf("canRecord" to true,"devices" to manager.cameraIdList.map {mapOf("id" to it,"label" to "摄像头 $it")}) else null,error)
                 }}
+                override fun onClosed(device:CameraDevice){opening=false;deviceClosed.complete(Unit)}
                 override fun onDisconnected(device:CameraDevice){device.close();emit(mapOf("session" to session,"error" to "摄像头已断开","phase" to "failed"));close()}
-                override fun onError(device:CameraDevice,error:Int){device.close();done(null,"摄像头被占用或无法启动（$error）");close()}
+                override fun onError(device:CameraDevice,error:Int){device.close();complete(null,"摄像头被占用或无法启动（$error）");close()}
             },handler)
-        }catch(e:Exception){done(null,e.message);close()}
+        }catch(e:Exception){opening=false;complete(null,e.message);close()}
     }
     @Suppress("DEPRECATION")
     private fun configure(done:(String?)->Unit) {
@@ -129,7 +139,10 @@ class MotionCamera(private val activity: Activity, private val worker: ExecutorS
     fun mark(value:Map<String,Any?>){worker.execute {lastBitmap?.let {engine?.mark(it,value)};renderer.radius=(value["radius"] as Number).toDouble();frozen=false}}
     @Suppress("DEPRECATION")
     fun start(done:(String?)->Unit){
+        if(closed){done("摄像头已关闭");return}
         if(recording){done(null);return}
+        startResult=done
+        fun complete(error:String?){val callback=startResult;startResult=null;callback?.invoke(error)}
         try {
             dir=File(root,UUID.randomUUID().toString()).apply {mkdirs()}
             recorder=MediaRecorder().apply {
@@ -138,11 +151,11 @@ class MotionCamera(private val activity: Activity, private val worker: ExecutorS
                 setVideoEncodingBitRate(3_000_000);setOrientationHint(rotation);setOutputFile(File(dir,"video").path);prepare()
             }
             handler.post {configure {error->
-                if(error!=null){done(error);return@configure}
-                try {recorder!!.start();recordOrigin=(SystemClock.elapsedRealtimeNanos()-origin)/1_000_000;frames=JSONArray();times=JSONArray();recording=true;renderer.reset();done(null)}
-                catch(e:Exception){done(e.message)}
+                if(error!=null){complete(error);return@configure}
+                try {recorder!!.start();recordOrigin=(SystemClock.elapsedRealtimeNanos()-origin)/1_000_000;frames=JSONArray();times=JSONArray();recording=true;renderer.reset();complete(null)}
+                catch(e:Exception){complete(e.message)}
             }}
-        }catch(e:Exception){done(e.message)}
+        }catch(e:Exception){complete(e.message)}
     }
     fun stop(interrupted:Boolean): Map<String,Any?> {
         val wasRecording=recording;recording=false
@@ -161,10 +174,34 @@ class MotionCamera(private val activity: Activity, private val worker: ExecutorS
         emit(mapOf("session" to session,"completed" to result,"phase" to result["status"]))
         return result
     }
-    fun close(){
-        if(closed)return;closed=true
-        capture?.close();camera?.close();reader?.close();recorder?.release();recorder=null
-        worker.execute {engine?.close();engine=null;lastBitmap?.recycle();lastBitmap=null}
-        thread.quitSafely()
+    @Synchronized fun close():CompletableFuture<Unit>{
+        if(closed)return closedFuture
+        closed=true;recording=false
+        val cleanup=CompletableFuture<Unit>()
+        handler.post {
+            openResult?.invoke(null,"摄像头已关闭");openResult=null
+            startResult?.invoke("摄像头已关闭");startResult=null
+            capture?.close();capture=null
+            val device=camera;camera=null;device?.close()
+            if(device==null&&!opening)deviceClosed.complete(Unit)
+            reader?.setOnImageAvailableListener(null,null)
+            worker.execute {
+                try {
+                    engine?.close();engine=null;lastBitmap?.recycle();lastBitmap=null
+                    reader?.close();reader=null;recorder?.release();recorder=null
+                    cleanup.complete(Unit)
+                }catch(error:Throwable){cleanup.completeExceptionally(error)}
+            }
+        }
+        CompletableFuture.allOf(deviceClosed,cleanup).whenComplete {_,error->
+            thread.quitSafely()
+            CompletableFuture.runAsync {
+                thread.join(5000)
+                if(error!=null)closedFuture.completeExceptionally(error)
+                else if(thread.isAlive)closedFuture.completeExceptionally(IllegalStateException("摄像头线程尚未关闭"))
+                else closedFuture.complete(Unit)
+            }
+        }
+        return closedFuture
     }
 }

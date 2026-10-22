@@ -5,9 +5,10 @@ import 'local_date.dart';
 import 'training_prescription.dart';
 import 'set_detail.dart';
 import 'beverage.dart';
+import 'plugin_backup.dart';
 
 const backupFormat = 'gym-tracker-backup';
-const backupVersion = 7;
+const backupVersion = 8;
 const maxBackupBytes = 20 * 1024 * 1024;
 const maxBackupRecords = 100000;
 const maxBackupTimestamp = 8640000000000000;
@@ -25,11 +26,13 @@ class BackupFile {
   final int schemaVersion;
   final int exportedAt;
   final Map<String, List<Map<String, Object?>>> data;
+  final Map<String, PluginBackupData>? plugins;
   const BackupFile._(
     this.version,
     this.schemaVersion,
     this.exportedAt,
     this.data,
+    this.plugins,
   );
 
   bool get hasSettings => data.containsKey('settings');
@@ -44,6 +47,10 @@ class BackupFile {
     'schemaVersion': schemaVersion,
     'exportedAt': exportedAt,
     'data': data,
+    if (plugins != null)
+      'plugins': {
+        for (final entry in plugins!.entries) entry.key: entry.value.toJson(),
+      },
   };
 }
 
@@ -245,12 +252,13 @@ BackupFile validateBackup(Object? input) {
   if (root['format'] != backupFormat) _fail('format', '不是本应用的备份文件');
   final version = root['version'];
   if (version is! int || version < 1 || version > backupVersion) {
-    _fail('version', '不受支持，请使用格式 1–7 的备份；新版本文件请先升级应用');
+    _fail('version', '不受支持，请使用格式 1–8 的备份；新版本文件请先升级应用');
   }
   final schema = root['schemaVersion'];
   if (schema is! int ||
       schema < 1 ||
       switch (version) {
+        8 => schema != 12,
         7 => schema != 11,
         6 => schema != 8,
         5 => schema != 7,
@@ -266,6 +274,21 @@ BackupFile validateBackup(Object? input) {
   final raw = _object(root['data'], 'data');
   final fields = _versionFields(version);
   var count = 0;
+  Map<String, PluginBackupData>? plugins;
+  if (version == 8) {
+    try {
+      plugins = validatePluginBackups(root['plugins']);
+      count = plugins.values.fold<int>(
+        0,
+        (n, plugin) => n + plugin.records.length,
+      );
+      if (count > maxBackupRecords) _fail('plugins', '记录总数超过 100,000 条上限');
+    } on FormatException catch (error) {
+      _fail('plugins', error.message);
+    }
+  } else if (root.containsKey('plugins')) {
+    _fail('plugins', '格式 1–7 不支持插件扩展字段');
+  }
   final sources = <String, List>{};
   final normalized = <String, List<Map<String, Object?>>>{};
   for (final table in fields.entries) {
@@ -509,6 +532,7 @@ BackupFile validateBackup(Object? input) {
     schema,
     exportedAt,
     Map.unmodifiable(normalized),
+    plugins,
   );
   if (result.activeSessions > 1) _fail('data.sessions', '包含多场未结束训练，只能保留一场');
   return result;

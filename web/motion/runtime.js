@@ -1,7 +1,20 @@
 import * as store from './store.js';
 const listeners=new Set(), active=new Set(), urls=new Map();
 let worker, boot, request=0, generation=0, live=null, video=null, pending=new Map();
+let disabled=false, closing=null, lifecycle=0, mediaAbort=new AbortController();
+const tasks=new Set(), videos=new Set();
 const emit=e=>listeners.forEach(fn=>fn(JSON.stringify(e)));
+function releaseVideo(v) {v.pause();v.removeAttribute('src');v.srcObject=null;v.load();videos.delete(v);}
+function waitFor(v,event) {
+  const signal=mediaAbort.signal;
+  return new Promise((resolve,reject)=>{
+    const finish=error=>{clearTimeout(timer);v.removeEventListener(event,done);v.removeEventListener('error',failed);signal.removeEventListener('abort',aborted);error?reject(error):resolve();};
+    const done=()=>finish(), failed=()=>finish(Error('浏览器无法读取视频')), aborted=()=>finish(Error('已取消'));
+    const timer=setTimeout(()=>finish(Error('视频读取超时')),12000);
+    v.addEventListener(event,done,{once:true});v.addEventListener('error',failed,{once:true});signal.addEventListener('abort',aborted,{once:true});
+    if(signal.aborted)aborted();
+  });
+}
 function rpc(method,args={},transfer=[]) {
   return new Promise((resolve,reject)=>{
     const id=++request;
@@ -24,7 +37,7 @@ async function engine() {
     owned.onerror=e=>{
       if(worker!==owned)return;
       for (const task of pending.values()) {clearTimeout(task.timeout);task.reject(Error(e.message || 'Worker 初始化失败'));}
-      pending.clear(); boot=null;
+      pending.clear();owned.terminate();worker=null;boot=null;
     };
     await rpc('init');
   })().catch(e=>{owned.terminate();if(worker===owned){worker=null;boot=null;}throw e;});
@@ -33,6 +46,7 @@ async function engine() {
 }
 function invalidate() {
   generation++;
+  mediaAbort.abort();mediaAbort=new AbortController();
   // Termination cancels synchronous WASM work promptly as well as pending scheduling.
   worker?.terminate(); worker=null; boot=null;
   for(const task of pending.values()) {clearTimeout(task.timeout);task.reject(Error('已取消'));} pending.clear();
@@ -42,22 +56,20 @@ function objectUrl(folder,blob) {
   return urls.get(folder);
 }
 async function source(folder) {
+  const mine=generation;
   const blob=await store.get(`${folder}/video`);
+  if(mine!==generation)throw Error('已取消');
   if (!blob) throw Error('本地视频缺失，可重新导入；训练记录仍然保留');
   active.add(folder);
   const element=document.createElement('video'); element.muted=true; element.playsInline=true;
+  videos.add(element);
   if(!element.requestVideoFrameCallback)throw Error('浏览器缺少视频帧时间戳支持，请使用新版 Chrome/Edge');
   element.src=objectUrl(folder,blob); element.preload='auto';
-  await new Promise((resolve,reject)=>{
-    element.onloadeddata=resolve; element.onerror=()=>reject(Error('浏览器无法解码这个视频格式'));
-    element.load();
-  });
+  const loaded=waitFor(element,'loadeddata');element.load();await loaded;
   if (!Number.isFinite(element.duration) || element.duration<=0) {
     // Some MediaRecorder WebM streams lack a duration header.
-    element.currentTime=1e10;
-    await new Promise(resolve=>element.addEventListener('timeupdate',resolve,{once:true}));
-    element.currentTime=0;
-    await new Promise(resolve=>element.addEventListener('seeked',resolve,{once:true}));
+    const updated=waitFor(element,'timeupdate');element.currentTime=1e10;await updated;
+    const reset=waitFor(element,'seeked');element.currentTime=0;await reset;
   }
   return element;
 }
@@ -65,15 +77,16 @@ function metadata(folder,v) {return {folder,uri:urls.get(folder),duration:Math.r
 async function seek(v,t) {
   const target=Math.min(Math.max(0,t/1000),Math.max(0,v.duration-.001));
   if (Math.abs(v.currentTime-target)>.0001) {
+    const signal=mediaAbort.signal;
     const presented=new Promise((resolve,reject)=>{
-      const id=v.requestVideoFrameCallback((_,info)=>{clearTimeout(timer);resolve(Math.round(info.mediaTime*1000));});
-      const timer=setTimeout(()=>{v.cancelVideoFrameCallback(id);reject(Error('浏览器未返回解码帧时间戳'));},12000);
+      const aborted=()=>{clearTimeout(timer);v.cancelVideoFrameCallback(id);reject(Error('已取消'));};
+      const id=v.requestVideoFrameCallback((_,info)=>{clearTimeout(timer);signal.removeEventListener('abort',aborted);resolve(Math.round(info.mediaTime*1000));});
+      const timer=setTimeout(()=>{signal.removeEventListener('abort',aborted);v.cancelVideoFrameCallback(id);reject(Error('浏览器未返回解码帧时间戳'));},12000);
+      signal.addEventListener('abort',aborted,{once:true});
+      if(signal.aborted)aborted();
     });
-    await new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>reject(Error('视频定位超时')),12000);
-      v.addEventListener('seeked',()=>{clearTimeout(timer);resolve();},{once:true}); v.currentTime=target;
-    });
-    v.motionTime=await presented;
+    const sought=waitFor(v,'seeked');v.currentTime=target;
+    const values=await Promise.all([sought,presented]);v.motionTime=values[1];
   }
   return v.motionTime??0;
 }
@@ -96,6 +109,7 @@ async function analyze(args) {
   const mine=++generation; await engine(); if(mine!==generation) throw Error('已取消');
   await rpc('reset');
   const v=await source(args.folder); video=v;
+  if(mine!==generation){releaseVideo(v);throw Error('已取消');}
   const frames=[],times=[],anchors=[...(args.anchors??[])].sort((a,b)=>a.t-b.t); let i=0,w=0,h=0;
   try {
     if(args.start<0 || args.end<=args.start || args.end-args.start>180000) throw Error('请选择不超过 3 分钟的片段');
@@ -116,7 +130,7 @@ async function analyze(args) {
     const name=`result-${crypto.randomUUID()}.json`, data=payload(frames,times,w,h);
     await store.put(`${args.folder}/${name}`,data);
     return {result:name,data};
-  } finally {v.pause();v.removeAttribute('src');v.load();if(video===v)video=null;}
+  } finally {releaseVideo(v);if(video===v)video=null;}
 }
 async function camera(args) {
   await closeCamera();
@@ -189,22 +203,56 @@ async function stopCamera(interrupted=false) {
   if(current.chunks?.length)result.uri=objectUrl(folder,await store.get(`${folder}/video`));
   emit({session:current.session,phase:result.status,completed:result});return result;
 }
-async function closeCamera() {if(live) {const current=live;current.closed=true;current.stream.getTracks().forEach(t=>t.stop());if(current.recorder?.state==='recording')current.recorder.stop();current.v.srcObject=null;live=null;}}
+async function closeCamera() {
+  if(!live)return;
+  const current=live;live=null;current.closed=true;current.recording=false;
+  current.stream.getTracks().forEach(t=>t.stop());current.v.pause();current.v.srcObject=null;
+  if(current.recorder?.state==='recording'){current.recorder.stop();await current.stopped;}
+  await Promise.allSettled([current.task,current.inflight]);
+}
+async function closeRuntime(deactivate=false) {
+  if(deactivate)disabled=true;
+  if(!closing)closing=(async()=>{
+    lifecycle++;
+    invalidate();await closeCamera();
+    for(const v of videos)releaseVideo(v);video=null;
+    await Promise.allSettled([...tasks]);
+    // Cancellation leaves the editor's unsaved media pinned. Its explicit
+    // release operations, or full plugin deactivation, revoke those handles.
+    if(disabled){for(const url of urls.values())URL.revokeObjectURL(url);urls.clear();active.clear();}
+  })().finally(()=>{closing=null;});
+  await closing;
+  if(deactivate)listeners.clear();
+}
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&live){stopCamera(true).catch(e=>emit({phase:'failed',error:String(e)}));}});
 window.gymMotion={
   subscribe(fn){listeners.add(fn);return ()=>listeners.delete(fn);},
   async call(method,json) {
+    if(method==='activate'){if(closing)await closing;disabled=false;return '{}';}
+    if(['close','cancel','deactivate'].includes(method)){await closeRuntime(method==='deactivate');return '{}';}
+    if(disabled)throw Error('插件已停用');
+    if(closing)throw Error('媒体会话正在关闭');
+    const owner=lifecycle;
+    const task=this.perform(method,json);
+    tasks.add(task);
+    try {
+      const result=await task;
+      if(owner!==lifecycle)throw Error('已取消');
+      return result;
+    } finally {tasks.delete(task);}
+  },
+  async perform(method,json) {
     const args=JSON.parse(json);let result={};
     switch(method) {
       case 'capabilities': result={supported:!!window.Worker&&!!window.OffscreenCanvas};break;
       case 'import': {
         const blob=args.bytes?new Blob([Uint8Array.from(atob(args.bytes),c=>c.charCodeAt(0))],{type:args.type??'video/mp4'}):await fetch(args.path).then(r=>r.blob());
         const folder=crypto.randomUUID();await store.put(`${folder}/video`,blob);active.add(folder);
-        const v=await source(folder);result=metadata(folder,v);v.src='';break;
+        const v=await source(folder);result=metadata(folder,v);releaseVideo(v);break;
       }
-      case 'open': {const v=await source(args.folder);result=metadata(args.folder,v);v.src='';break;}
+      case 'open': {const v=await source(args.folder);result=metadata(args.folder,v);releaseVideo(v);break;}
       case 'load': result=await store.get(`${args.folder}/${args.result}`);if(!result)throw Error('分析结果缺失，请重新分析');break;
-      case 'frame': {const v=await source(args.folder);const t=await seek(v,args.t);result={t,image:await jpeg(v),width:v.videoWidth,height:v.videoHeight};v.src='';break;}
+      case 'frame': {const v=await source(args.folder);try {const t=await seek(v,args.t);result={t,image:await jpeg(v),width:v.videoWidth,height:v.videoHeight};}finally{releaseVideo(v);}break;}
       case 'analyze': result=await analyze(args);break;
       case 'cancel': invalidate();video?.pause();await closeCamera();break;
       case 'camera': result=await camera(args);break;

@@ -4,6 +4,9 @@ import 'package:provider/provider.dart';
 
 import '../state/backup_controller.dart';
 import '../state/data_revision.dart';
+import '../plugins/bundled/bundled_catalog.dart';
+import '../plugins/flutter/plugin_ui_adapter.dart';
+import '../plugins/runtime/plugin_manager.dart';
 
 import '../ui/theme.dart';
 
@@ -22,13 +25,12 @@ class AppShell extends StatelessWidget {
         context.watch<DataRevision?>()?.value ??
         context.watch<BackupController?>()?.revision ??
         0;
-    final index = switch (location) {
-      '/calories' => 1,
-      final p when p == '/analysis' || p.startsWith('/analysis/') => 2,
-      '/history' => 3,
-      '/progress' => 4,
-      _ => 0,
-    };
+    final manager = context.watch<PluginManager?>();
+    final registry =
+        context.read<PluginUiRegistry?>() ?? bundledUi(PluginExitRegistry());
+    final destinations = registry.destinations(manager);
+    final matched = destinations.indexWhere((d) => d.matches(location));
+    final index = matched < 0 ? 0 : matched;
 
     return Scaffold(
       appBar:
@@ -40,7 +42,7 @@ class AppShell extends StatelessWidget {
             '/progress',
           }.contains(location)
           ? AppBar(
-              title: Text(['训练', '热量', '动作分析', '历史', '进步'][index]),
+              title: Text(destinations[index].label),
               actions: [
                 IconButton(
                   tooltip: '设置',
@@ -71,25 +73,13 @@ class AppShell extends StatelessWidget {
         selectedIndex: index,
         backgroundColor: c.surface,
         indicatorColor: c.accent.withValues(alpha: 0.18),
-        onDestinationSelected: (i) => switch (i) {
-          0 => context.go('/'),
-          1 => context.go('/calories'),
-          2 => context.go('/analysis'),
-          3 => context.go('/history'),
-          _ => context.go('/progress'),
-        },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.fitness_center), label: '训练'),
-          NavigationDestination(
-            icon: Icon(Icons.local_drink_outlined),
-            label: '热量',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.accessibility_new),
-            label: '动作分析',
-          ),
-          NavigationDestination(icon: Icon(Icons.history), label: '历史'),
-          NavigationDestination(icon: Icon(Icons.show_chart), label: '进步'),
+        onDestinationSelected: (i) => context.go(destinations[i].route),
+        destinations: [
+          for (final destination in destinations)
+            NavigationDestination(
+              icon: Icon(destination.icon),
+              label: destination.label,
+            ),
         ],
       ),
     );

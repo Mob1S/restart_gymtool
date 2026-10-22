@@ -12,7 +12,7 @@ export async function run(h) {
     for(let attempt=0;attempt<10;attempt++) {
       const height=await h.evaluate('window.innerHeight');
       const nodes=await semantics();
-      const bottom=nodes.some(e=>e.text==='设置'&&e.y>height-100)?height-80:height;
+      const bottom=nodes.some(e=>e.text==='进步'&&e.y>height-100)?height-80:height;
       const element=nodes.filter(e=>exact?e.text===text:e.text.includes(text)).sort((a,b)=>a.width*a.height-b.width*b.height)[0];
       if(element && element.y>40 && element.y+element.height<bottom-5) {await clickText(text,exact);return;}
       await send('Input.dispatchMouseEvent',{type:'mouseWheel',x:180,y:Math.max(80,Math.min(650,height-140)),deltaX:0,deltaY:element?.y<40?-300:180});await delay(250);
@@ -89,7 +89,7 @@ export async function run(h) {
     await clickText('结束训练');
     await expectText('50 lb');await clickText('完成',true);
     const backup=await h.exportFile('native-pounds');
-    assert.equal(backup.data.version,7);assert.equal(backup.data.schemaVersion,11);
+    assert.equal(backup.data.version,8);assert.equal(backup.data.schemaVersion,12);
     const set=backup.data.data.sets.find(s=>s.isCompleted);
     assert.equal(set.sourceWeight,'50');assert.equal(set.sourceUnit,'lb');assert.equal(set.weight,22.6796185);
   });

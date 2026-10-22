@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/ids.dart';
-import '../../data/repositories/executor_access.dart';
-import '../../data/repositories/beverage_repo.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
+import '../../plugins/api/plugin_runtime.dart';
 import '../../domain/beverage.dart';
 import '../../domain/local_date.dart';
 import '../../state/data_revision.dart';
@@ -49,6 +49,16 @@ class _DrinkEditorPageState extends State<DrinkEditorPage> {
   bool _busy = false;
   bool _changedSnapshot = false;
   String? _error;
+  void Function()? _removeActivity;
+  @override
+  void initState() {
+    super.initState();
+    _removeActivity = caloriesActivities(context)?.register(
+      () => _busy ? StopDecision.busy : StopDecision.unsavedChanges,
+      () async {},
+    );
+  }
+
   String get _preview {
     try {
       return _beverage.calculate(_amount.text, _unit)?.display ?? '待补热量';
@@ -94,8 +104,8 @@ class _DrinkEditorPageState extends State<DrinkEditorPage> {
         amount: _amount.text.trim(),
         unit: _unit,
       );
-      await BeverageRepo(
-        context.read<SqlExecutor>(),
+      await caloriesClient(
+        context,
       ).saveRecord(record, newBeverage: widget.saveBeverage ? _beverage : null);
       if (!mounted) return;
       context.read<DataRevision?>()?.changed();
@@ -241,6 +251,7 @@ class _DrinkEditorPageState extends State<DrinkEditorPage> {
   );
   @override
   void dispose() {
+    _removeActivity?.call();
     _amount.dispose();
     super.dispose();
   }

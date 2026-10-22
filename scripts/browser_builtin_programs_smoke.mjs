@@ -43,7 +43,7 @@ export async function run(h) {
   } else {
   await check('fresh users see all 71 exercises and stable catalog bindings without importing',async()=>{
     const {data}=await h.exportFile('01-library');
-    assert.equal(data.version,7); assert.equal(data.schemaVersion,11);
+    assert.equal(data.version,8); assert.equal(data.schemaVersion,12);
     assert.equal(data.data.exercises.length,71); assert.equal(data.data.catalogBindings.length,71);
     assert(data.data.exercises.some(e=>e.name==='高脚杯深蹲'));
     assert(data.data.exercises.some(e=>e.name==='器械辅助引体向上'));

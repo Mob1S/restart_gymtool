@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/files/motion_bridge.dart';
 import '../data/ids.dart';
-import '../data/repositories/motion_project_repo.dart';
+import '../plugins/api/feature_clients.dart';
 import '../domain/video_review.dart';
 import '../domain/motion_catalog.dart';
 import '../domain/motion_observations.dart';
@@ -13,7 +13,7 @@ import '../domain/motion_observations.dart';
 /// Owns one editor's media and generations. Platform events never own persistence.
 class MotionAnalysisController extends ChangeNotifier {
   final MotionBridge bridge;
-  final MotionProjectRepo repo;
+  final MotionProjectStore repo;
   final String id;
   String? setId, folder, result, uri, error;
   String mode, phase = 'ready', status = 'incomplete';
@@ -31,6 +31,7 @@ class MotionAnalysisController extends ChangeNotifier {
   bool dirty = false, needsAnalysis = false, canRecord = true;
   bool mirrored = false;
   bool _disposed = false;
+  Future<void>? _closing;
   int _generation = 0;
   int _frameGeneration = 0;
   int? textureId;
@@ -443,6 +444,7 @@ class MotionAnalysisController extends ChangeNotifier {
     phase = 'cancelled';
     status = 'incomplete';
     await bridge.call('cancel');
+    textureId = null;
     _notify();
   }
 
@@ -538,26 +540,32 @@ class MotionAnalysisController extends ChangeNotifier {
     _notify();
   }
 
+  /// Confirm platform and subscriptions are closed before a plugin can stop.
+  Future<void> closeSession() =>
+      _closing ??= _closeSession().onError((Object error, StackTrace stack) {
+        _closing = null;
+        Error.throwWithStackTrace(error, stack);
+      });
+
+  Future<void> _closeSession() async {
+    _generation++;
+    _frameGeneration++;
+    _session = null;
+    await _subscription?.cancel();
+    _subscription = null;
+    await bridge.call('close');
+    for (final folder in _held) {
+      await bridge.call('release', {'folder': folder});
+    }
+    _held.clear();
+    textureId = null;
+    phase = 'closed';
+  }
+
   @override
   void dispose() {
     _disposed = true;
-    _generation++;
-    _subscription?.cancel();
-    unawaited(() async {
-      try {
-        await bridge.call('close');
-        for (final f in _held) {
-          await bridge.call('release', {'folder': f});
-        }
-        final files = await repo.resultFiles();
-        await bridge.call('collect', {
-          'keep': files.keys.toList(),
-          'results': files,
-        });
-      } catch (_) {
-        /* Cleanup retries on the next editor/startup. */
-      }
-    }());
+    unawaited(closeSession().catchError((Object _) {}));
     super.dispose();
   }
 }

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../../data/repositories/beverage_repo.dart';
-import '../../data/repositories/executor_access.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
 import '../../domain/beverage.dart';
 import '../../domain/beverage_trends.dart';
 import '../../domain/local_date.dart';
@@ -26,7 +24,7 @@ class _CalorieTrendsPageState extends State<CalorieTrendsPage>
   Future<void> reloadData() async {
     final generation = ++_generation;
     try {
-      final records = await BeverageRepo(context.read<SqlExecutor>()).records(
+      final records = await caloriesClient(context).records(
         from: LocalDate.fromDateTime(
           DateTime(widget.date.year, widget.date.month, widget.date.day - 29),
         ),

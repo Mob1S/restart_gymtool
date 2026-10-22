@@ -53,7 +53,7 @@ void main() {
     await db.run("UPDATE app_meta SET value='8' WHERE key='schema_version'");
     await migrate(db);
     await migrate(db);
-    expect(await getSchemaVersion(db), 11);
+    expect(await getSchemaVersion(db), schemaVersion);
     expect((await repo.group('st'))!['weight'], 60.0);
     await repo.save('st', 'new', {'result': 'new'});
     expect(await repo.load('st'), isNotNull);
@@ -61,7 +61,7 @@ void main() {
   test(
     'new schema and saved review survive reload; original set unchanged',
     () async {
-      expect(await getSchemaVersion(db), 11);
+      expect(await getSchemaVersion(db), schemaVersion);
       await repo.save('st', 'folder1', {'result': 'a'});
       await repo.save('st', 'folder2', {'result': 'b'});
       expect((await repo.load('st'))!['folder'], 'folder2');
@@ -95,8 +95,8 @@ void main() {
     () async {
       await repo.save('st', 'private-media', {'result': 'private-result'});
       final backup = await exportBackup(db, exportedAt: 1);
-      expect(backup.schemaVersion, 11);
-      expect(backup.version, 7);
+      expect(backup.schemaVersion, 12);
+      expect(backup.version, 8);
       expect(backup.toJson().toString(), isNot(contains('private-media')));
     },
   );

@@ -66,6 +66,13 @@ class _BackupPreviewDialogState extends State<BackupPreviewDialog> {
                     : '旧备份没有饮料数据，本机 ${current.rows('beverages').length} 款饮料和 ${current.rows('drinkRecords').length} 条饮用记录将保留。',
               ),
               Text(
+                '已知插件数据：饮料库与饮用记录${incoming.hasBeverages ? '包含在备份中' : '由本机保留'}。插件启用选择保持本机设置。',
+              ),
+              Text(
+                '未安装插件数据：${incoming.plugins?.length ?? 0} 个命名空间，${incoming.plugins?.values.fold<int>(0, (count, plugin) => count + plugin.records.length) ?? 0} 条记录。仅替换备份明确包含的命名空间。',
+              ),
+              const Text('不包含视频：本机动作分析视频和分析结果保留。'),
+              Text(
                 incoming.version < 3
                     ? '旧备份将收藏、调重幅度和器械备忘恢复为默认。'
                     : '本机收藏、调重幅度和器械备忘将一起替换。',

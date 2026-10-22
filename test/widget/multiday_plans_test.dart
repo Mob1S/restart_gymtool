@@ -10,6 +10,7 @@ import 'package:gym_tracker/domain/training_plans.dart';
 import 'package:provider/provider.dart';
 
 import '../support/backup_fakes.dart';
+import '../support/async_ui.dart';
 import 'backup_section_test.dart' show settle;
 
 void main() {
@@ -32,6 +33,11 @@ void main() {
         openDatabase: () async => db,
         backupFiles: MemoryBackupFiles(),
       ),
+    );
+    await pumpUntil(
+      t,
+      () => find.byType(NavigationBar).evaluate().isNotEmpty,
+      description: 'boot navigation',
     );
     await settle(t);
   }

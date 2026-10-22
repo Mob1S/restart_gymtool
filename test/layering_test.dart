@@ -294,6 +294,47 @@ String _preview(String literal) {
 void main() {
   final sources = _allLibSources();
 
+  test('插件公共API不得依赖Flutter、数据库、文件或应用内部实现', () {
+    final violations = <String>[];
+    sources.forEach((path, source) {
+      if (!_under(path, 'lib/plugins/api/')) return;
+      for (final imp in _importsOf(source)) {
+        if (imp.startsWith('package:flutter/') ||
+            imp.startsWith('package:provider/') ||
+            imp.contains('sqflite') ||
+            imp == 'dart:io' ||
+            imp == 'dart:ui' ||
+            imp.contains('data/') ||
+            imp.contains('app/') ||
+            imp.contains('state/') ||
+            imp.contains('features/')) {
+          violations.add('$path → $imp');
+        }
+      }
+    });
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
+  test('插件运行与内置实现不得绕过公共能力访问SQL或原生桥', () {
+    final violations = <String>[];
+    sources.forEach((path, source) {
+      if (!_under(path, 'lib/plugins/runtime/') &&
+          !_under(path, 'lib/plugins/bundled/')) {
+        return;
+      }
+      for (final imp in _importsOf(source)) {
+        if (imp.contains('data/db/') ||
+            imp.contains('data/repositories/') ||
+            imp.contains('data/files/') ||
+            imp.contains('sqflite') ||
+            imp == 'dart:io') {
+          violations.add('$path → $imp');
+        }
+      }
+    });
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
   test('lib/ 下有源文件（防止 glob 写错导致本测试空转）', () {
     expect(sources, isNotEmpty);
   });

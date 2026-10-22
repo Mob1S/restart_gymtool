@@ -145,6 +145,7 @@ try {
   await send('Page.enable');await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride',{width:360,height:800,deviceScaleFactor:1,mobile:true});
   await send('Page.navigate',{url:origin+'/#/analysis'});
+  await expectText('此功能尚未启用');await clickText('启用并继续',true);
   await expectText('动作分析');await clickText('动作分析');
   await expectText('看见每一次动作');await screenshot('01-home-360');checks.push('independent home and five destinations at 360px');
   await clickText('浏览和搜索动作库');await expectText('杠铃卧推');
@@ -157,6 +158,7 @@ try {
   await expectText('标记片段首帧');await screenshot('02-real-import');
   // Scroll to the clip controls and select a short real interval using the accessible end slider.
   await evaluate(`window.uiEvents=[];gymMotion.subscribe(s=>{const e=JSON.parse(s);if(e.frame)uiEvents.push({t:e.frame.t,pose:e.frame.pose?.length,valid:e.frame.x!=null})});true`);
+  await scrollTo('标记片段首帧');
   const controls=await semantics();
   console.log('Imported real video through the Flutter picker');
   const endSlider=controls.filter(e=>e.text===''&&e.role==='slider'&&e.value==='100%').sort((a,b)=>a.width-b.width)[0];

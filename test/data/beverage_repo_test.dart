@@ -31,7 +31,7 @@ void main() {
       "INSERT INTO motion_project(id,mode,folder,payload,created_at,updated_at) VALUES('analysis','import','private','{}',1,1)",
     );
     await migrate(exec);
-    expect(await getSchemaVersion(exec), 11);
+    expect(await getSchemaVersion(exec), schemaVersion);
     expect((await exec.all('SELECT * FROM session')).length, 1);
     expect((await exec.all('SELECT * FROM motion_project')).length, 1);
     await migrate(exec);
@@ -99,8 +99,8 @@ void main() {
         );
       }
       final original = await exportBackup(exec, exportedAt: 1);
-      expect(original.version, 7);
-      expect(original.schemaVersion, 11);
+      expect(original.version, 8);
+      expect(original.schemaVersion, 12);
       final decoded = decodeBackup(encodeBackup(original));
       await repo.deleteRecord('zero');
       await restoreBackup(exec, await inspectBackup(exec, decoded));
@@ -116,7 +116,7 @@ void main() {
         ..remove('beverages')
         ..remove('drinkRecords');
       final old = validateBackup({
-        ...empty.toJson(),
+        ...(empty.toJson()..remove('plugins')),
         'version': 6,
         'schemaVersion': 8,
         'data': data,

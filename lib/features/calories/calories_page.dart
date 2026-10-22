@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../data/repositories/beverage_repo.dart';
-import '../../data/repositories/executor_access.dart';
+import '../../plugins/api/feature_clients.dart';
+import '../../plugins/flutter/plugin_ui_adapter.dart';
 import '../../domain/beverage.dart';
 import '../../domain/beverage_trends.dart';
 import '../../domain/local_date.dart';
@@ -32,7 +32,7 @@ class _CaloriesPageState extends State<CaloriesPage>
   String? _error;
   bool _deleting = false;
   int _generation = 0;
-  BeverageRepo get _repo => BeverageRepo(context.read<SqlExecutor>());
+  CaloriesClient get _repo => caloriesClient(context);
   @override
   void initState() {
     super.initState();

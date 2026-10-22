@@ -11,6 +11,8 @@ class TestBridge extends MotionBridge {
   final stream = StreamController<Map<String, dynamic>>.broadcast(sync: true);
   final tasks = <Completer<Map<String, dynamic>>>[];
   final sessions = <String>[];
+  bool failFirstClose = false;
+  int closeCalls = 0;
   @override
   Stream<Map<String, dynamic>> get events => stream.stream;
   @override
@@ -18,6 +20,10 @@ class TestBridge extends MotionBridge {
     String method, [
     Map<String, dynamic> args = const {},
   ]) async {
+    if (method == 'close') {
+      closeCalls++;
+      if (failFirstClose && closeCalls == 1) throw StateError('close failed');
+    }
     if (method == 'analyze') {
       sessions.add(args['session'] as String);
       final task = Completer<Map<String, dynamic>>();
@@ -39,6 +45,21 @@ class TestBridge extends MotionBridge {
 }
 
 void main() {
+  test(
+    'a failed platform close can be retried and successful close is idempotent',
+    () async {
+      final db = await FfiExecutor.openMigrated(),
+          bridge = TestBridge()..failFirstClose = true;
+      final c = MotionAnalysisController(MotionProjectRepo(db), bridge: bridge);
+      await expectLater(c.closeSession(), throwsStateError);
+      await c.closeSession();
+      await c.closeSession();
+      expect(bridge.closeCalls, 2);
+      c.dispose();
+      await bridge.stream.close();
+      await db.close();
+    },
+  );
   test(
     'late callbacks and cancelled computation cannot change a new generation',
     () async {

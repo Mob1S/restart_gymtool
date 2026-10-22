@@ -24,13 +24,17 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ReviewPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChannel.StreamHandler, ActivityAware, PluginRegistry.RequestPermissionsResultListener {
     private lateinit var context: Context
     private lateinit var channel: MethodChannel
     private lateinit var events: EventChannel
-    private val worker = Executors.newSingleThreadExecutor()
+    private var worker: ExecutorService? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var cancelled = AtomicBoolean(false)
     private var activity: Activity? = null
@@ -39,33 +43,92 @@ class ReviewPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
     private lateinit var texture: TextureRegistry.SurfaceTextureEntry
     private lateinit var previewSurface: Surface
     private lateinit var renderer: MotionRenderer
-    private var camera: MotionCamera? = null
+    private lateinit var textures: TextureRegistry
+    private var mediaReady = false
+    private var accepting = true // Existing bridge callers remain compatible.
+    private var closing = false
+    @Volatile private var generation = 0L
+    @Volatile private var cameraRequest = 0L
+    private var pendingCameraResult: MethodChannel.Result? = null
+    private val closeResults = mutableListOf<MethodChannel.Result>()
+    private val cameraClosures = CopyOnWriteArrayList<CompletableFuture<Unit>>()
+    private var showSkeleton = true
+    private var showTrajectory = true
+    @Volatile private var camera: MotionCamera? = null
     private var sink: EventChannel.EventSink? = null
     private val active = mutableSetOf<String>()
     private val root get() = File(context.noBackupFilesDir, "video_reviews").apply { mkdirs() }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
-        texture = binding.textureRegistry.createSurfaceTexture()
-        texture.surfaceTexture().setDefaultBufferSize(640,480)
-        previewSurface=Surface(texture.surfaceTexture());renderer=MotionRenderer(previewSurface)
+        textures = binding.textureRegistry
         channel = MethodChannel(binding.binaryMessenger, "gym_tracker/review").also { it.setMethodCallHandler(this) }
         events = EventChannel(binding.binaryMessenger, "gym_tracker/review_progress").also { it.setStreamHandler(this) }
     }
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        cancelled.set(true);camera?.close();worker.shutdown();previewSurface.release();texture.release(); channel.setMethodCallHandler(null); events.setStreamHandler(null)
+        accepting=false;closeResources(null);sink=null
+        channel.setMethodCallHandler(null); events.setStreamHandler(null)
     }
     override fun onListen(arguments: Any?, eventSink: EventChannel.EventSink) { sink = eventSink }
     override fun onCancel(arguments: Any?) { sink = null }
     override fun onAttachedToActivity(binding:ActivityPluginBinding){activity=binding.activity;activityBinding=binding;binding.addRequestPermissionsResultListener(this)}
     override fun onDetachedFromActivityForConfigChanges(){onDetachedFromActivity()}
     override fun onReattachedToActivityForConfigChanges(binding:ActivityPluginBinding){onAttachedToActivity(binding)}
-    override fun onDetachedFromActivity(){camera?.close();camera=null;activityBinding?.removeRequestPermissionsResultListener(this);activityBinding=null;activity=null;pendingCamera=null}
+    override fun onDetachedFromActivity(){closeResources(null);activityBinding?.removeRequestPermissionsResultListener(this);activityBinding=null;activity=null}
     override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray):Boolean {
         if(requestCode!=621)return false
         val action=pendingCamera;pendingCamera=null;action?.invoke();return true
     }
-    private fun emit(event:Map<String,Any?>){main.post {sink?.success(event + ("textureId" to texture.id()))}}
+    private fun emit(event:Map<String,Any?>, owner:Long){main.post {
+        if(owner==generation && accepting && !closing && mediaReady)sink?.success(event + ("textureId" to texture.id()))
+    }}
+
+    private fun ensureWorker(): ExecutorService = worker ?: Executors.newSingleThreadExecutor().also {worker=it}
+    private fun ensureMedia() {
+        if(mediaReady)return
+        texture=textures.createSurfaceTexture()
+        texture.surfaceTexture().setDefaultBufferSize(640,480)
+        previewSurface=Surface(texture.surfaceTexture());renderer=MotionRenderer(previewSurface)
+        renderer.skeleton=showSkeleton;renderer.trajectory=showTrajectory
+        mediaReady=true
+    }
+
+    /** Acknowledge only after camera callbacks, queued work and worker shutdown finish. */
+    private fun closeResources(result:MethodChannel.Result?) {
+        result?.let {closeResults.add(it)}
+        if(closing)return
+        closing=true;generation++;cameraRequest++;cancelled.set(true)
+        pendingCamera=null
+        pendingCameraResult?.error("cancelled","已取消摄像头操作",null);pendingCameraResult=null
+        val ownedCamera=camera;camera=null
+        val ownedWorker=worker
+        ownedCamera?.let {cameraClosures.add(it.close())}
+        val cameraClosed=CompletableFuture.allOf(*cameraClosures.toTypedArray())
+        cameraClosed.whenComplete {_,cameraError->
+            // Wait off the UI thread, including any synchronous native frame work.
+            CompletableFuture.runAsync {
+                var failure:Throwable?=cameraError
+                try {
+                    ownedWorker?.shutdown()
+                    if(ownedWorker!=null && !ownedWorker.awaitTermination(30,TimeUnit.SECONDS))error("媒体任务尚未关闭")
+                }catch(error:Throwable){failure=error}
+                main.post {
+                    if(failure==null) {
+                        worker=null
+                        if(mediaReady){renderer.reset();previewSurface.release();texture.release();mediaReady=false}
+                        // A cancelled analysis can still have unsaved media in
+                        // its editor. Only plugin deactivation revokes all holds;
+                        // normal session cleanup releases each folder explicitly.
+                        if(!accepting)active.clear()
+                        cameraClosures.clear()
+                    }
+                    closing=false
+                    val waiting=closeResults.toList();closeResults.clear()
+                    waiting.forEach {if(failure==null)it.success(null)else it.error("close_failed","媒体资源尚未关闭，请重试",null)}
+                }
+            }
+        }
+    }
 
     private fun folder(name: String): File {
         require(name.matches(Regex("[0-9a-f-]{36}"))) { "无效的复盘目录" }
@@ -80,33 +143,68 @@ class ReviewPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         val immediate=call.arguments as? Map<*,*> ?: emptyMap<Any,Any>()
-        if (call.method == "cancel" || call.method == "close") { cancelled.set(true);camera?.close();camera=null; result.success(null); return }
+        if(call.method=="capabilities") {result.success(mapOf("supported" to true));return}
+        if(call.method=="deactivate") {accepting=false;closeResources(result);return}
+        if(call.method=="activate") {
+            if(closing){result.error("busy","媒体会话正在关闭",null);return}
+            if(worker?.isShutdown==true){result.error("close_failed","媒体资源尚未关闭，请先重试停用",null);return}
+            accepting=true;result.success(null);return
+        }
+        if (call.method == "cancel" || call.method == "close") {closeResources(result);return}
+        if(!accepting){result.error("pluginDisabled","动作分析已停用",null);return}
+        if(closing){result.error("busy","媒体会话正在关闭",null);return}
+        val ownerGeneration=generation
+        if(call.method=="renderOptions") {
+            showSkeleton=immediate["skeleton"]!=false;showTrajectory=immediate["trajectory"]!=false
+            if(mediaReady){renderer.skeleton=showSkeleton;renderer.trajectory=showTrajectory}
+            result.success(null);return
+        }
+        val executor=ensureWorker()
         if(call.method=="camera") {
+            val request=++cameraRequest
+            pendingCameraResult?.error("cancelled","已取消上次摄像头操作",null)
+            pendingCameraResult=null;pendingCamera=null
             val owner=activity
             if(owner==null){result.error("camera_error","摄像头需要前台页面",null);return}
-            val open={
-                if(owner.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)result.error("camera_permission","摄像头权限被拒绝，请在系统设置中允许",null)
+            val open:()->Unit={
+                pendingCameraResult=null
+                if(ownerGeneration!=generation || request!=cameraRequest || !accepting)result.error("cancelled","已取消摄像头操作",null)
+                else if(owner.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)result.error("camera_permission","摄像头权限被拒绝，请在系统设置中允许",null)
                 else {
-                    camera?.close();renderer.reset()
-                    camera=MotionCamera(owner,worker,root,renderer,::emit)
-                    camera!!.open(immediate["deviceId"] as? String,immediate["session"] as String){value,error->main.post {if(error==null)result.success(value)else result.error("camera_error",error,null)}}
+                    ensureMedia()
+                    val previous=camera;camera=null
+                    previous?.let {cameraClosures.add(it.close())}
+                    // Another superseded request may already be closing the
+                    // previous camera. The newest request waits for it too.
+                    val ready=CompletableFuture.allOf(*cameraClosures.toTypedArray())
+                    ready.whenComplete {_,closeError->main.post {
+                        if(ownerGeneration!=generation || request!=cameraRequest || !accepting)result.error("cancelled","已取消摄像头操作",null)
+                        else if(closeError!=null)result.error("camera_error","上次摄像头尚未关闭",null)
+                        else {
+                            renderer.reset()
+                            camera=MotionCamera(owner,executor,root,renderer,{event->if(request==cameraRequest)emit(event,ownerGeneration)})
+                            camera!!.open(immediate["deviceId"] as? String,immediate["session"] as String){value,error->main.post {
+                                if(ownerGeneration!=generation || request!=cameraRequest)result.error("cancelled","已取消摄像头操作",null)
+                                else if(error==null)result.success(value?.plus("textureId" to texture.id()))else result.error("camera_error",error,null)
+                            }}
+                        }
+                    }}
                 }
             }
-            if(owner.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){pendingCamera=open;owner.requestPermissions(arrayOf(Manifest.permission.CAMERA),621)}else open()
+            if(owner.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){pendingCamera=open;pendingCameraResult=result;owner.requestPermissions(arrayOf(Manifest.permission.CAMERA),621)}else open()
             return
         }
         if(call.method=="mark"){@Suppress("UNCHECKED_CAST") val anchor=immediate["anchor"] as Map<String,Any?>;camera?.mark(anchor);result.success(null);return}
         if(call.method=="freezeCamera"){camera?.freeze {main.post {result.success(null)}} ?: result.success(null);return}
-        if(call.method=="renderOptions"){renderer.skeleton=immediate["skeleton"]!=false;renderer.trajectory=immediate["trajectory"]!=false;result.success(null);return}
         if(call.method=="startCamera"){camera?.start {error->main.post{if(error==null)result.success(null)else result.error("record_error",error,null)}} ?: result.error("camera_error","摄像头尚未准备",null);return}
         val token=if(call.method in listOf("analyze","frame","import")){cancelled.set(true);AtomicBoolean(false).also {cancelled=it}}else cancelled
-        worker.execute {
+        if(call.method=="analyze")ensureMedia()
+        executor.execute {
             try {
                 val args = call.arguments as? Map<*, *> ?: emptyMap<Any, Any>()
                 val name = args["folder"] as? String
                 val value: Any? = when (call.method) {
-                    "capabilities" -> mapOf("supported" to true,"textureId" to texture.id())
-                    "stopCamera" -> {val value=camera?.stop(args["interrupted"]==true) ?: emptyMap();camera=null;(value["folder"] as? String)?.let {active.add(it)};value}
+                    "stopCamera" -> {val owned=camera;val value=owned?.stop(args["interrupted"]==true) ?: emptyMap();owned?.let {cameraClosures.add(it.close())};camera=null;(value["folder"] as? String)?.let {active.add(it)};value}
                     "import" -> {
                         val source = File(args["path"] as String)
                         require(source.isFile) { "视频文件不可读取" }
@@ -166,10 +264,10 @@ class ReviewPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
                         }
                         data ?: error("此时间没有可读取的视频帧")
                     }
-                    "analyze" -> analyze(folder(name!!), args, token)
+                    "analyze" -> analyze(folder(name!!), args, token, ownerGeneration)
                     else -> throw IllegalArgumentException("不支持的复盘操作")
                 }
-                main.post { result.success(value) }
+                main.post {if(ownerGeneration==generation)result.success(value)else result.error("cancelled","已取消",null)}
             } catch (e: Exception) {
                 main.post { result.error(if (token.get()) "cancelled" else "review_error", e.message ?: "视频处理失败", null) }
             }
@@ -187,7 +285,7 @@ class ReviewPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
         } finally { retriever.release() }
     }
 
-    private fun analyze(dir: File, args: Map<*, *>, token: AtomicBoolean): Map<String, Any> {
+    private fun analyze(dir: File, args: Map<*, *>, token: AtomicBoolean, ownerGeneration:Long): Map<String, Any> {
         val start=(args["start"] as Number).toLong();val end=(args["end"] as Number).toLong()
         require(start>=0&&end>start&&end-start<=180000) {"请选择不超过 3 分钟的一组视频"}
         @Suppress("UNCHECKED_CAST")
@@ -209,7 +307,7 @@ class ReviewPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, EventChanne
                         anchor?.let {renderer.radius=(it["radius"] as Number).toDouble()}
                         val row=engine.frame(bitmap,t,anchor).put("session",args["session"]);frames.put(row);renderer.draw(bitmap,row)
                         val progress=(t-start).toDouble()/(end-start)
-                        emit(mapOf("session" to args["session"],"folder" to dir.name,"frame" to row.channelMap(),"progress" to progress,"phase" to "analyzing"))
+                        emit(mapOf("session" to args["session"],"folder" to dir.name,"frame" to row.channelMap(),"progress" to progress,"phase" to "analyzing"),ownerGeneration)
                     } finally {bitmap.recycle()}
                 }
                 true

@@ -2,10 +2,36 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gym_tracker/domain/beverage.dart';
 import 'package:gym_tracker/data/repositories/public_beverage_search.dart';
 import 'package:gym_tracker/state/beverage_search_controller.dart';
 
 void main() {
+  test(
+    'disposing a search cancels its request and ignores a late result',
+    () async {
+      final pending = Completer<List<Beverage>>();
+      var cancelled = 0, notifications = 0;
+      final search = BeverageSearchController(
+        find: (_) => pending.future,
+        onCancel: () async {
+          cancelled++;
+        },
+        debounce: Duration.zero,
+        minInterval: Duration.zero,
+      );
+      search.addListener(() => notifications++);
+      search.update('test');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final before = notifications;
+      search.dispose();
+      await Future<void>.delayed(Duration.zero);
+      expect(cancelled, 1);
+      pending.complete([]);
+      await Future<void>.delayed(Duration.zero);
+      expect(notifications, before);
+    },
+  );
   test('public parser never treats per100g as per100ml; accepts explicit serving zero', () {
     final p = {
       'code': '5449000000996',

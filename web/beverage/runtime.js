@@ -3,6 +3,15 @@
 (() => {
   const root = new URL('beverage/vendor/', document.baseURI);
   let engine, worker, input, resolvePick, generation = 0;
+  let disabled = false;
+  const tasks = new Set(), networkTasks = new Set(), requests = new Set(), workers = new Set(), terminations = new WeakMap();
+  const terminate = value => {
+    if (!value) return Promise.resolve();
+    if (!terminations.has(value)) terminations.set(value, Promise.resolve().then(() => value.terminate()).then(() => {
+      workers.delete(value);
+    }).catch(error => { terminations.delete(value); throw error; }));
+    return terminations.get(value);
+  };
   const engineReady = () => engine ??= new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = new URL('tesseract.min.js', root);
@@ -22,23 +31,54 @@
     input.click();
   });
   window.gymBeverage = {
-    async get(url) {
+    activate() { disabled = false; },
+    async deactivate() {
+      disabled = true;
+      for (const request of requests) request.abort();
+      await Promise.all([this.cancel(), Promise.allSettled([...networkTasks])]);
+    },
+    async get(url, sessionId='') {
+      if (disabled) throw new Error('插件已停用');
+      const controller = new AbortController();
+      controller.sessionId=sessionId;
+      requests.add(controller);
+      const task = this.fetch(url, controller.signal);
+      task.sessionId=sessionId;
+      networkTasks.add(task);
+      try { return await task; }
+      finally { networkTasks.delete(task); requests.delete(controller); }
+    },
+    async cancelSearch(sessionId) {
+      for(const request of requests) if(request.sessionId===sessionId) request.abort();
+      await Promise.allSettled([...networkTasks].filter(task=>task.sessionId===sessionId));
+    },
+    async fetch(url, signal) {
       const uri = new URL(url);
       if (!['search.openfoodfacts.org', 'world.openfoodfacts.org'].includes(uri.hostname) || uri.protocol !== 'https:') throw new Error('不支持的公共数据源');
-      const response = await fetch(uri, { signal: AbortSignal.timeout(15000), credentials: 'omit' });
+      const response = await fetch(uri, { signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]), credentials: 'omit' });
       if (!response.ok) throw new Error(`公共搜索服务 HTTP ${response.status}`);
       const text = await response.text();
       if (text.length > 2 * 1024 * 1024) throw new Error('公共响应过大');
       return text;
     },
-    cancel() {
+    async cancel() {
       generation++;
       input?.remove(); input = null;
       resolvePick?.(null); resolvePick = null;
-      worker?.terminate(); worker = null;
+      const owned = worker; worker = null;
+      await Promise.allSettled([terminate(owned), ...Array.from(workers, terminate), ...tasks]);
+      if (workers.size) throw new Error('标签识别资源尚未关闭，请重试');
     },
     async scan(camera) {
-      this.cancel();
+      if (disabled) throw new Error('插件已停用');
+      await this.cancel();
+      if (disabled) throw new Error('插件已停用');
+      const task = this.performScan(camera);
+      tasks.add(task);
+      try { return await task; }
+      finally { tasks.delete(task); }
+    },
+    async performScan(camera) {
       const token = generation;
       const file = await choose(camera);
       if (!file || token !== generation) return 'null';
@@ -57,6 +97,7 @@
           workerBlobURL: false,
           gzip: false,
         });
+        workers.add(localWorker);
         if (token !== generation) return 'null';
         worker = localWorker;
         const canvas = document.createElement('canvas');
@@ -94,7 +135,7 @@
         if (token !== generation) return 'null';
         return JSON.stringify({text: bestText, image: canvas.toDataURL('image/png').split(',')[1]});
       } finally {
-        localWorker?.terminate();
+        await terminate(localWorker);
         if (worker === localWorker) worker = null;
       }
     },

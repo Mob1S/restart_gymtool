@@ -5,14 +5,23 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class MotionBridge {
+  static int _generation = 0;
+  static int get generation => _generation;
   static bool get supported => defaultTargetPlatform == TargetPlatform.android;
   static const _channel = MethodChannel('gym_tracker/review');
-  static final Stream<Map<String, dynamic>> _events =
-      const EventChannel('gym_tracker/review_progress')
-          .receiveBroadcastStream()
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .asBroadcastStream();
+  static final Stream<Map<String, dynamic>> _events = const EventChannel(
+    'gym_tracker/review_progress',
+  ).receiveBroadcastStream().map((e) => Map<String, dynamic>.from(e as Map));
   Stream<Map<String, dynamic>> get events => _events;
+  Future<void> activate() async {
+    if (supported) await call('activate');
+    _generation++;
+  }
+
+  Future<void> deactivate() async {
+    if (supported) await call('deactivate');
+  }
+
   Future<Map<String, dynamic>> call(
     String method, [
     Map<String, dynamic> args = const {},

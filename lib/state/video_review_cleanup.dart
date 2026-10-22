@@ -9,6 +9,7 @@ class VideoReviewCleanup {
   final DataRevision revision;
   bool _running = false, _again = false, _disposed = false;
   bool? _available;
+  Future<void>? _pending;
   VideoReviewCleanup(this.repo, this.revision) {
     revision.addListener(changed);
     changed();
@@ -20,13 +21,14 @@ class VideoReviewCleanup {
       return;
     }
     _running = true;
-    unawaited(() async {
+    final work = () async {
       try {
         _available ??=
             (await MotionBridge().call('capabilities', {}))['supported'] ==
             true;
         if (_available != true) return;
         final results = await repo.resultFiles();
+        if (_disposed) return;
         await MotionBridge().call('collect', {
           'keep': results.keys.toList(),
           'results': results,
@@ -41,11 +43,18 @@ class VideoReviewCleanup {
           changed();
         }
       }
-    }());
+    }();
+    _pending = work;
+    unawaited(work);
   }
 
   void dispose() {
     _disposed = true;
     revision.removeListener(changed);
+  }
+
+  Future<void> close() async {
+    dispose();
+    await _pending;
   }
 }

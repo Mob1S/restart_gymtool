@@ -9,10 +9,14 @@ enum PublicSearchStatus { idle, loading, ready, empty, failed, timeout }
 
 class BeverageSearchController extends ChangeNotifier {
   final PublicBeverageSearch searcher;
+  final Future<List<Beverage>> Function(String)? find;
+  final Future<void> Function()? onCancel;
   final Duration debounce;
   final Duration minInterval;
   BeverageSearchController({
     PublicBeverageSearch? searcher,
+    this.find,
+    this.onCancel,
     this.debounce = const Duration(milliseconds: 700),
     this.minInterval = const Duration(seconds: 6),
   }) : searcher = searcher ?? PublicBeverageSearch();
@@ -63,9 +67,9 @@ class BeverageSearchController extends ChangeNotifier {
     }
     _lastRequest = DateTime.now();
     try {
-      final found = await searcher
-          .search(value)
-          .timeout(const Duration(seconds: 16));
+      final found = await (find?.call(value) ?? searcher.search(value)).timeout(
+        const Duration(seconds: 16),
+      );
       if (_disposed || generation != _generation) return;
       if (_cache.length >= 20) _cache.remove(_cache.keys.first);
       _cache[value] = (DateTime.now(), found);
@@ -88,8 +92,13 @@ class BeverageSearchController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(cancelRequests().catchError((Object _) {}));
+    super.dispose();
+  }
+
+  Future<void> cancelRequests() async {
     _generation++;
     _timer?.cancel();
-    super.dispose();
+    await onCancel?.call();
   }
 }
