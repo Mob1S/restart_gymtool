@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 
 // 执行器从**仓储层**拿，不从 data/db/ 直接拿 —— 见 executor_access.dart 的说明
 import '../../data/repositories/executor_access.dart';
-import '../../data/repositories/session_summary_loader.dart';
-import '../../domain/session_summary.dart';
+import '../../state/data_revision_loader.dart';
+import '../../state/summary_feedback_loader.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
 import '../../ui/widgets/primary_button.dart';
@@ -27,36 +27,42 @@ class SummaryPage extends StatefulWidget {
   State<SummaryPage> createState() => _SummaryPageState();
 }
 
-class _SummaryPageState extends State<SummaryPage> {
-  SessionSummary? _summary;
-  bool _loading = true;
+class _SummaryPageState extends State<SummaryPage>
+    with DataRevisionLoader<SummaryPage>, SummaryFeedbackLoader<SummaryPage> {
+  @override
+  Future<void> reloadData() =>
+      loadSummaryFeedback(context.read<SqlExecutor>(), widget.sessionId);
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final exec = context.read<SqlExecutor>();
-    final summary = await loadSessionSummary(exec, widget.sessionId);
-
-    if (!mounted) return;
-    setState(() {
-      _summary = summary;
-      _loading = false;
-    });
+  void didUpdateWidget(covariant SummaryPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionId != widget.sessionId) reloadData();
   }
 
   @override
   Widget build(BuildContext context) {
     final c = appColors(context);
-    if (_loading) {
+    if (feedbackLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final summary = _summary;
+    final summary = feedbackSummary;
     if (summary == null) {
-      return const Scaffold(body: Center(child: Text('这场训练不存在')));
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(feedbackError ?? '这场训练不存在'),
+              if (feedbackError != null)
+                TextButton(onPressed: reloadData, child: const Text('重试载入')),
+              TextButton(
+                onPressed: () => context.go('/'),
+                child: const Text('返回训练'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return Scaffold(
@@ -69,7 +75,17 @@ class _SummaryPageState extends State<SummaryPage> {
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.screenH),
         children: [
-          SessionSummaryView(summary: summary),
+          if (feedbackError != null) ...[
+            Text(feedbackError!),
+            TextButton(onPressed: reloadData, child: const Text('重试载入')),
+          ],
+          SessionSummaryView(
+            summary: summary,
+            comparisons: feedbackComparisons,
+            comparisonLoading: comparisonsLoading,
+            comparisonError: comparisonError,
+            onComparisonRetry: reloadData,
+          ),
           const SizedBox(height: AppSpacing.xl),
           PrimaryButton(label: '完成', onPressed: () => context.go('/')),
         ],

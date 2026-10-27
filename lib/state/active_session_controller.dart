@@ -108,10 +108,15 @@ class ActiveSessionController extends ChangeNotifier {
   bool _needsReload = false;
   bool _disposed = false;
   int _generation = 0;
+  int _resumeRequest = 0;
+  bool _resumeInitialized = false;
+  Future<bool>? _resuming;
+  String? _resumeError;
   String? _writeMessage;
   final Map<String, EquipmentWeight> _stagedWeights = {};
   Future<WorkoutWriteResult>? _flushing;
-  bool get writing => _writing || _starting || _removing;
+  bool get writing => _writing || _starting || _removing || loading;
+  String? get resumeError => _resumeError;
   String? get writeMessage => _writeMessage;
   bool get savingWeight => _flushing != null;
   bool get hasPendingWeight => _stagedWeights.isNotEmpty;
@@ -338,6 +343,7 @@ class ActiveSessionController extends ChangeNotifier {
     }
     if (writing) throw StateError('训练正在保存，请稍后重试');
     _generation++;
+    _invalidateResume();
     _stagedWeights.clear();
   }
 
@@ -345,6 +351,7 @@ class ActiveSessionController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _generation++;
+    _invalidateResume();
     _stagedWeights.clear();
     super.dispose();
   }
@@ -368,29 +375,88 @@ class ActiveSessionController extends ChangeNotifier {
 
   String? get currentSessionExerciseId => currentExercise?.sessionExercise.id;
 
-  /// 载入未结束的训练；没有就返回 false。
-  Future<bool> resume() async {
+  /// Read once for navigation; returning to the recorder keeps its current focus.
+  /// Explicit [resume] remains available after a database change.
+  Future<bool> ensureResumed() async {
+    try {
+      final pending = _resuming;
+      if (pending != null) return await pending;
+      if (_resumeInitialized && !_needsReload) return session != null;
+      return await resume();
+    } catch (_) {
+      // A failed read keeps any loaded workout; the bar offers a retry.
+      return session != null;
+    }
+  }
+
+  /// 载入未结束的训练；没有就返回 false。并发调用共享同一次读取。
+  Future<bool> resume() => _restore();
+
+  Future<bool> _restore({bool allowStarting = false}) {
+    if (_disposed) return Future.value(false);
+    if (_resuming != null) return _resuming!;
+    if (_writing || _removing || (_starting && !allowStarting)) {
+      return Future.value(session != null);
+    }
+    final request = ++_resumeRequest;
+    final generation = _generation;
     loading = true;
+    _resumeError = null;
     _notify();
+    final future = _readResume(request, generation);
+    _resuming = future;
+    return future;
+  }
+
+  bool _currentResume(int request, int generation) =>
+      !_disposed && request == _resumeRequest && generation == _generation;
+
+  Future<bool> _readResume(int request, int generation) async {
     try {
       final found = await getActiveSession(_exec);
+      if (!_currentResume(request, generation)) return session != null;
       if (found == null) {
         session = null;
         exercises = [];
         currentIndex = 0;
+        _resumeInitialized = true;
         return false;
       }
-      final loaded = await _loadExercises(found.id);
+      final loaded = await _loadExercises(found.id, generation: generation);
+      if (!_currentResume(request, generation)) return session != null;
+      final index = await _resolveCurrentIndex(
+        found.id,
+        loaded.where((e) => isRecordingExercise(e.sets)).toList(),
+      );
+      if (!_currentResume(request, generation)) return session != null;
       session = found;
       _needsReload = false;
       _writeMessage = null;
       exercises = loaded;
-      currentIndex = await _resolveCurrentIndex(found.id, recordingExercises);
+      currentIndex = index;
+      _resumeInitialized = true;
       return true;
+    } catch (_) {
+      if (_currentResume(request, generation)) {
+        _resumeInitialized = false;
+        _resumeError = '训练读取失败，已保存的数据仍在，请重试';
+      }
+      rethrow;
     } finally {
-      loading = false;
-      _notify();
+      if (_currentResume(request, generation)) {
+        loading = false;
+        _resuming = null;
+        _notify();
+      }
     }
+  }
+
+  void _invalidateResume() {
+    _resumeRequest++;
+    _resuming = null;
+    _resumeInitialized = false;
+    _resumeError = null;
+    loading = false;
   }
 
   /// 开一场新训练。
@@ -409,14 +475,28 @@ class ActiveSessionController extends ChangeNotifier {
     String? preferredTemplateId,
     String? selectionToken,
   }) async {
-    if (writing) return StartResult.busy;
+    // Bootstrap may have published the navigation while its first read is still
+    // running. Queue a start behind that read rather than dropping the request.
+    final restoring = _resuming;
+    if (restoring != null && !_starting && !_writing && !_removing) {
+      try {
+        final found = await restoring;
+        if (_disposed) return StartResult.busy;
+        if (found && session != null) return StartResult.conflict;
+      } catch (_) {
+        // The recovery error remains visible; a failed read must not create a
+        // new session when we cannot know whether an older one already exists.
+        return StartResult.busy;
+      }
+    }
+    if (writing || _disposed) return StartResult.busy;
     _starting = true;
     try {
       // 复用 resume 而不是另写一次查询：它会把那一场连动作带组一起装进
       // controller，界面选「接着练」时直接导航过去就有东西可渲染 ——
       // 只返回一个 id 的话，记录页会因为 controller 里没有 exercises
       // 而误判成「这次训练还没有动作」。
-      if (await resume()) return StartResult.conflict;
+      if (await _restore(allowStarting: true)) return StartResult.conflict;
 
       // 顺序不能反：**先探冲突（上面那行）→ 再定计划 → 才建 session**。
       // 轮转的输入是「最近一场已结束训练用的模板」，先建出来的话这一场虽然
@@ -467,7 +547,7 @@ class ActiveSessionController extends ChangeNotifier {
         return StartResult.planChanged;
       }
       if (created == null) {
-        await resume();
+        await _restore(allowStarting: true);
         return StartResult.conflict;
       }
 
@@ -477,6 +557,9 @@ class ActiveSessionController extends ChangeNotifier {
       } catch (_) {
         exercises = [];
         currentIndex = 0;
+        _needsReload = true;
+        _resumeInitialized = false;
+        _resumeError = '训练已开始，读取失败，请重试';
         _notify();
         return StartResult.refreshFailed;
       }
@@ -485,6 +568,7 @@ class ActiveSessionController extends ChangeNotifier {
       return StartResult.started;
     } finally {
       _starting = false;
+      _notify();
     }
   }
 
@@ -652,6 +736,7 @@ class ActiveSessionController extends ChangeNotifier {
   /// 调用方要负责先 [finishSession]（[endWorkout] 已经这么做了）。
   void reset() {
     _generation++;
+    _invalidateResume();
     _stagedWeights.clear();
     _needsReload = false;
     _writeMessage = null;
@@ -673,7 +758,10 @@ class ActiveSessionController extends ChangeNotifier {
   ///
   /// 放在这里而不是各个入口分别处理，是因为 resume / startNew / addExercise /
   /// endWorkout 全都会经过它，**一处覆盖全部**。
-  Future<List<ActiveExercise>> _loadExercises(String sessionId) async {
+  Future<List<ActiveExercise>> _loadExercises(
+    String sessionId, {
+    int? generation,
+  }) async {
     final sessionExercises = await listSessionExercises(_exec, sessionId);
     final now = _now();
     final result = <ActiveExercise>[];
@@ -681,6 +769,10 @@ class ActiveSessionController extends ChangeNotifier {
     for (final se in sessionExercises) {
       final exercise = await getExercise(_exec, se.exerciseId);
       var sets = await listSets(_exec, se.id);
+
+      if (_disposed || (generation != null && generation != _generation)) {
+        return result;
+      }
 
       final stale = findStaleRest(sets, now);
       if (stale != null) {

@@ -58,18 +58,21 @@ class _RecordPageState extends State<RecordPage> {
     super.initState();
     // 记录全程屏幕常亮 —— 组间放下手机时不该息屏
     WakelockPlus.enable();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final c = context.read<ActiveSessionController>();
-      await c.resume();
-      if (mounted) {
-        final preferences = context.read<ExercisePreferencesController?>();
-        await preferences?.load(
-          c.exercises.map((e) => e.sessionExercise.exerciseId),
-        );
-      }
-      _syncFromPending(c);
-      if (mounted) setState(() => _ready = true);
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreRecording());
+  }
+
+  Future<void> _restoreRecording() async {
+    if (!mounted) return;
+    setState(() => _ready = false);
+    final c = context.read<ActiveSessionController>();
+    await c.ensureResumed();
+    if (!mounted) return;
+    final preferences = context.read<ExercisePreferencesController?>();
+    await preferences?.load(
+      c.exercises.map((e) => e.sessionExercise.exerciseId),
+    );
+    _syncFromPending(c);
+    if (mounted) setState(() => _ready = true);
   }
 
   @override
@@ -236,6 +239,32 @@ class _RecordPageState extends State<RecordPage> {
     final sc = appColors(context);
 
     final session = c.session;
+    if (!_ready || c.loading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('记录')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (c.resumeError != null && session == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('记录')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(c.resumeError!, textAlign: TextAlign.center),
+                TextButton(
+                  onPressed: _restoreRecording,
+                  child: const Text('重试读取训练'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     if (session == null || session.id != widget.sessionId) {
       return Scaffold(
         appBar: AppBar(title: const Text('记录')),

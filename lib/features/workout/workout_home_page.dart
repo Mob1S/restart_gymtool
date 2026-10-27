@@ -143,7 +143,7 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
 
   Future<void> _probe() async {
     if (!mounted) return;
-    await context.read<ActiveSessionController>().resume();
+    await context.read<ActiveSessionController>().ensureResumed();
     if (mounted) await _loadPlan();
   }
 
@@ -283,7 +283,11 @@ class _WorkoutHomePageState extends State<WorkoutHomePage>
     });
     try {
       final c = context.read<ActiveSessionController>();
-      await c.resume();
+      await c.ensureResumed();
+      if (c.resumeError != null) {
+        if (mounted) setState(() => _message = c.resumeError);
+        return;
+      }
       if (!mounted) return;
       if (c.session != null) {
         final choice = await showConflictDialog(

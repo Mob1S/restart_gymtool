@@ -1,6 +1,6 @@
 # openGym 训练续练与总结对比 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 实现主页面续练入口及训练总结中的上次同动作记录对比。
 
@@ -59,13 +59,13 @@ class ExerciseComparison {
 
 约定 `recordedSetsVolume(Iterable<SetEntry> sets)` 在领域层统一计算已完成父组及 continuation 的容量，原总结与对比均复用。`buildSessionComparisons(SessionSummary current, Iterable<SessionSummary> history)` 返回按本场动作首次出现顺序排列的对比；`Future<List<ExerciseComparison>> loadSessionComparisons(SqlExecutor exec, SessionSummary current)` 返回同一结果，进行中场次返回空列表。
 
-- [ ] 编写领域测试，造出两个同动作 occurrence，断言逻辑组计数和所有原始段保留；不同动作 ID 即使同名也不能配对。
-- [ ] 编写真实 SQLite 测试，使用同一动作在多个日期、同日期不同 session ID、未来及进行中记录，断言只选严格早于本场的已结束场次。
-- [ ] 先运行两份新测试，确认缺少接口导致失败。
-- [ ] 给只读总结模型补 exerciseId；补统一容量 helper；实现纯聚合及前次选择。按现有装载口径只保留已完成父组。
-- [ ] 批量查询本场相关动作的前次 session 与其已完成组，保留 occurrence 和 set_detail；不按动作重复扫描全历史。
-- [ ] 用删除／编辑／补录后的第二次查询验证结果来自当前历史，而非缓存累加计数。
-- [ ] 运行 `flutter test test/domain/session_comparison_test.dart test/data/session_comparison_repo_test.dart test/data/session_summary_loader_test.dart test/data/program_record_flow_test.dart`。
+- [x] 编写领域测试，造出两个同动作 occurrence，断言逻辑组计数和所有原始段保留；不同动作 ID 即使同名也不能配对。
+- [x] 编写真实 SQLite 测试，使用同一动作在多个日期、同日期不同 session ID、未来及进行中记录，断言只选严格早于本场的已结束场次。
+- [x] 先运行两份新测试，确认缺少接口导致失败。
+- [x] 给只读总结模型补 exerciseId；补统一容量 helper；实现纯聚合及前次选择。按现有装载口径只保留已完成父组。
+- [x] 批量查询本场相关动作的前次 session 与其已完成组，保留 occurrence 和 set_detail；不按动作重复扫描全历史。
+- [x] 用删除／编辑／补录后的第二次查询验证结果来自当前历史，而非缓存累加计数。
+- [x] 运行 `flutter test test/domain/session_comparison_test.dart test/data/session_comparison_repo_test.dart test/data/session_summary_loader_test.dart test/data/program_record_flow_test.dart`。
 
 领域测试的最小断言必须包含：
 ```dart
@@ -93,13 +93,13 @@ expect(result.single.current.volumeLoad, 960);
 - Consumes: 应用级 `ActiveSessionController`、`PluginUiRegistry.destinations` 与 `/session/:id`。
 - Produces: 可重复安全调用的首次恢复接口，恢复加载／错误／重试状态；保持原 `resume()` 作为显式刷新调用以兼容现有导入恢复与测试。
 
-- [ ] 先写控制器测试：两次并发首次恢复只执行一次实际装载；已载入时保留 currentIndex；显式刷新仍能读取外部更改。
-- [ ] 写 widget 测试：无训练不占位，主页面显示名字与已完成父组计数，点击导航，窄屏和大字体不溢出。
-- [ ] 应用启动统一发起首次恢复；首页和记录页改用幂等恢复，避免从历史页返回后重置用户所选动作。
-- [ ] 恢复与写入相互保护；失败保留旧状态并提供重试；操作 generation 过期时不得重建已删除／结束 session。
-- [ ] 在 AppShell 的明确主路径白名单显示续练条；使用 Column(mainAxisSize: min) 将它放在原 NavigationBar 上方，保留 SafeArea 和现有导航顺序。
-- [ ] 验证已有训练结束、删除与备份恢复后续练条正确消失或重新出现；不在记录、计划编辑和分析任务页覆盖内容。
-- [ ] 运行新增控制器／widget 测试以及 `test/app/router_test.dart test/widget/training_home_test.dart test/widget/plugin_management_test.dart test/widget/analysis_session_plugin_test.dart`。
+- [x] 先写控制器测试：两次并发首次恢复只执行一次实际装载；已载入时保留 currentIndex；显式刷新仍能读取外部更改。
+- [x] 写 widget 测试：无训练不占位，主页面显示名字与已完成父组计数，点击导航，窄屏和大字体不溢出。
+- [x] 应用启动统一发起首次恢复；首页和记录页改用幂等恢复，避免从历史页返回后重置用户所选动作。
+- [x] 恢复与写入相互保护；失败保留旧状态并提供重试；操作 generation 过期时不得重建已删除／结束 session。
+- [x] 在 AppShell 的明确主路径白名单显示续练条；使用 Column(mainAxisSize: min) 将它放在原 NavigationBar 上方，保留 SafeArea 和现有导航顺序。
+- [x] 验证已有训练结束、删除与备份恢复后续练条正确消失或重新出现；不在记录、计划编辑和分析任务页覆盖内容。
+- [x] 运行新增控制器／widget 测试以及 `test/app/router_test.dart test/widget/training_home_test.dart test/widget/plugin_management_test.dart test/widget/analysis_session_plugin_test.dart`。
 
 ## Task 3: 共用对比展示与刷新
 
@@ -126,13 +126,13 @@ SessionComparisonView(
 )
 ```
 
-- [ ] 写 widget 测试：首次记录提示、两次原始 kg/lb 读数、热身／正式／未分类、RPE/RIR 缺失、分段停顿与 occurrence 边界。
-- [ ] 实现同一张对比卡中的“本次／上次日期＋原始组列表＋逻辑组数及容量变化”；不使用强弱箭头、百分比或 PR 徽章。
-- [ ] 总结内容仍由 SessionSummaryView 展示，新区块位于原始总结后；两类页面传入相同结果与回调。
-- [ ] 共用加载 mixin 先展示基本总结，再加载对比；新请求增加代次；过期结果和销毁后的回调不写入页面。
-- [ ] 对比查询失败时保留本场总结并显示独立重试；基本总结读取失败保留旧数据并提供重试。
-- [ ] 总结页与历史详情使用 DataRevisionLoader 触发刷新，修改／删除、CSV、补录及备份恢复后重算。sessionId 变化时也发起新读取。
-- [ ] 用可控延迟执行器验证先发后到的旧对比结果不会盖过新记录；运行新测试及历史／总结相关原有 widget 测试。
+- [x] 写 widget 测试：首次记录提示、两次原始 kg/lb 读数、热身／正式／未分类、RPE/RIR 缺失、分段停顿与 occurrence 边界。
+- [x] 实现同一张对比卡中的“本次／上次日期＋原始组列表＋逻辑组数及容量变化”；不使用强弱箭头、百分比或 PR 徽章。
+- [x] 总结内容仍由 SessionSummaryView 展示，新区块位于原始总结后；两类页面传入相同结果与回调。
+- [x] 共用加载 mixin 先展示基本总结，再加载对比；新请求增加代次；过期结果和销毁后的回调不写入页面。
+- [x] 对比查询失败时保留本场总结并显示独立重试；基本总结读取失败保留旧数据并提供重试。
+- [x] 总结页与历史详情使用 DataRevisionLoader 触发刷新，修改／删除、CSV、补录及备份恢复后重算。sessionId 变化时也发起新读取。
+- [x] 用可控延迟执行器验证先发后到的旧对比结果不会盖过新记录；运行新测试及历史／总结相关原有 widget 测试。
 
 ## Task 4: 环境、集成验证与交付
 
@@ -148,14 +148,14 @@ $root = Join-Path (Split-Path -Parent $PSScriptRoot) '.tooling'
 ```
 验证时直接设置任务需要的 PUB_CACHE、Flutter PATH 和 Android/JDK 路径，不覆盖调用者 HOME。
 
-- [ ] 读取 Flutter SDK 版本，运行 `flutter pub get --offline --enforce-lockfile` 重建迁移后仍引用旧路径的生成配置，保留 pubspec.lock。
-- [ ] 对本轮涉及 Dart 文件运行格式化，执行全部 `flutter analyze` 和 `flutter test --reporter expanded`，将完整输出保存到忽略的 build/acceptance 目录。
-- [ ] `flutter build web --no-pub`；借助现有隔离 Chrome profile 验收框架，运行新增真实流程：备份导入两次训练、打开历史／进步续练、保持所选动作、结束后对比、编辑原始记录后刷新、窄屏深浅主题。
-- [ ] 运行原训练、插件与历史相关浏览器回归；检查截图及错误记录，不将构建当作实际流程验证。
-- [ ] 在可用工具链下构建 Android release；若设备不在线，明确标记真机交互未验证。
-- [ ] 更新 README／CHANGELOG 与实施记录，记录实际通过的测试、构建、浏览器场景及限制，不复制旧测试数量当成本轮结果。
-- [ ] 独立复核最后 diff，确认无新依赖、迁移、备份格式变化、用户数据及 openGym 分支改动。
-- [ ] 只提交本轮明确文件，保留既有 .superpowers、.tmp、.vscode 非跟踪内容，不推送或发布。
+- [x] 读取 Flutter SDK 版本，运行 `flutter pub get --offline --enforce-lockfile` 重建迁移后仍引用旧路径的生成配置，保留 pubspec.lock。
+- [x] 对本轮涉及 Dart 文件运行格式化，执行全部 `flutter analyze` 和 `flutter test --reporter expanded`，将完整输出保存到忽略的 build/acceptance 目录。
+- [x] `flutter build web --no-pub`；借助现有隔离 Chrome profile 验收框架，运行新增真实流程：备份导入两次训练、打开历史／进步续练、保持所选动作、结束后对比、编辑原始记录后刷新、窄屏深浅主题。
+- [x] 运行原训练、插件与历史相关浏览器回归；检查截图及错误记录，不将构建当作实际流程验证。
+- [x] 在可用工具链下构建 Android release；若设备不在线，明确标记真机交互未验证。
+- [x] 更新 README／CHANGELOG 与实施记录，记录实际通过的测试、构建、浏览器场景及限制，不复制旧测试数量当成本轮结果。
+- [x] 独立复核最后 diff，确认无新依赖、迁移、备份格式变化、用户数据及 openGym 分支改动。
+- [x] 只提交本轮明确文件，保留既有 .superpowers、.tmp、.vscode 非跟踪内容，不推送或发布。
 
 ## 计划自查
 

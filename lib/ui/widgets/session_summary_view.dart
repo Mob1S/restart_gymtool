@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../domain/rest_advice.dart';
 import '../../domain/session_summary.dart';
+import '../../domain/session_comparison.dart';
 import '../../domain/types.dart';
 import '../theme.dart';
 import '../tokens.dart';
 import 'app_card.dart';
 import 'stat_block.dart';
+import 'session_comparison_view.dart';
 
 /// 总结正文：三个数字、口径字样、组间休息回顾，以及每个动作的卡片。
 ///
@@ -21,12 +23,20 @@ class SessionSummaryView extends StatelessWidget {
   final SessionSummary summary;
   final void Function(SetEntry set, String name, int index)? onEdit;
   final void Function(SetEntry set)? onReview;
+  final List<ExerciseComparison>? comparisons;
+  final bool comparisonLoading;
+  final String? comparisonError;
+  final VoidCallback? onComparisonRetry;
 
   const SessionSummaryView({
     super.key,
     required this.summary,
     this.onEdit,
     this.onReview,
+    this.comparisons,
+    this.comparisonLoading = false,
+    this.comparisonError,
+    this.onComparisonRetry,
   });
 
   @override
@@ -82,6 +92,13 @@ class SessionSummaryView extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
 
         for (final s in summary.exercises) _exerciseCard(context, s),
+        if (summary.session.finishedAt != null)
+          SessionComparisonView(
+            comparisons: comparisons,
+            loading: comparisonLoading,
+            error: comparisonError,
+            onRetry: onComparisonRetry,
+          ),
       ],
     );
   }

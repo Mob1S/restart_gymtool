@@ -10,12 +10,39 @@ export async function run(h) {
     await send('Page.navigate',{url:h.origin+'/#'+route});
     await h.until(()=>h.has(route==='/settings/plugins'?'插件管理':'训练'),'page ready');
   }
+  async function reloadAt(route, expectedText) {
+    let previous;
+    await h.until(async()=>{
+      const current=await evaluate('location.href');
+      const url=new URL(current);
+      const stable=current===previous && url.origin===h.origin &&
+        (url.hash.slice(1)||'/')===route;
+      previous=current;
+      return stable;
+    },'stable route before reload');
+    const timeOrigin=await evaluate('performance.timeOrigin');
+    await send('Page.reload');
+    // The CDP command acknowledges the reload before the old DOM disappears.
+    // Wait for a new document so stale semantics cannot satisfy page readiness.
+    await h.until(async()=>{
+      try {
+        return await evaluate('performance.timeOrigin')!==timeOrigin;
+      } catch {
+        return false; // The previous execution context is being destroyed.
+      }
+    },'new document after reload');
+    await expectText(expectedText);
+  }
   async function toggle(name) {
     const element=await h.until(async()=>{
       const rows=await h.semantics();
       return rows.filter(row=>row.text.startsWith(name)&&!row.disabled).sort((a,b)=>a.width*a.height-b.width*b.height)[0];
     },'plugin switch '+name);
     await h.clickAt(element.x+element.width/2,element.y+element.height/2);
+    const expectedState=element.text.includes('已启用')?'已停用':'已启用';
+    await h.until(async()=>(await h.semantics()).some(row=>
+      row.text.startsWith(name)&&row.text.includes(expectedState)&&!row.disabled),
+    'saved plugin state '+name);
   }
   await check('fresh install has three destinations and loads no optional runtime',async()=>{
     await navigate();await expectText('开始训练');
@@ -41,8 +68,10 @@ export async function run(h) {
     imported.plugins={'community.example':{dataVersion:3,records:[{key:'preferences',value:{name:'示例',amount:12,nullable:null,nested:[true,{value:'保留'}]}}]}};
     const file=path.join(h.output,'unknown-plugin-v8.json');
     await writeFile(file,JSON.stringify(imported));await h.restoreFile(file);
+    // Pausing the active plugin can reveal home before restore finishes.
+    await expectText(`已恢复 ${imported.data.sessions.length} 场训练`);
     await navigate('/settings/plugins');await toggle('饮料热量');
-    await send('Page.reload');await expectText('插件管理');
+    await reloadAt('/settings/plugins','插件管理');
     await navigate();assert(!await h.has('热量'));
     const exported=(await h.exportFile('unknown-disabled-roundtrip')).data;
     assert.deepEqual(exported.plugins,imported.plugins);
@@ -55,7 +84,7 @@ export async function run(h) {
     await send('Page.navigate',{url:h.origin+'/#/analysis'});await expectText('此功能尚未启用');
     assert.equal(await evaluate(`gymPluginRuntime.load('motion').then(()=>false,()=>true)`),true);
     await clickText('启用并继续',true);await expectText('看见每一次动作');
-    await send('Page.reload');await expectText('看见每一次动作');
+    await reloadAt('/analysis','看见每一次动作');
     await h.screenshot('04-motion-reenabled');
     await navigate('/settings/plugins');await toggle('动作分析');
     await navigate();assert(!await h.has('动作分析'));
@@ -97,7 +126,7 @@ export async function run(h) {
       worker.port.close();return {schemaVersion:11,sessions:0};
     })()`);
     await writeFile(path.join(h.output,'legacy-fixture.json'),JSON.stringify(fixture));
-    await send('Page.reload');await expectText('开始训练');
+    await reloadAt('/','开始训练');
     for(const label of ['训练','热量','动作分析','历史','进步']) assert(await h.has(label));
     const upgraded=(await h.exportFile('legacy-upgraded')).data;
     assert.equal(upgraded.schemaVersion,12);assert.equal(upgraded.data.sessions.length,0);

@@ -9,8 +9,7 @@ import '../../state/data_revision_loader.dart';
 
 // 执行器从**仓储层**拿，不从 data/db/ 直接拿 —— 见 executor_access.dart 的说明
 import '../../data/repositories/executor_access.dart';
-import '../../data/repositories/session_summary_loader.dart';
-import '../../domain/session_summary.dart';
+import '../../state/summary_feedback_loader.dart';
 import '../../domain/local_date.dart';
 import '../../ui/theme.dart';
 import '../../ui/tokens.dart';
@@ -41,22 +40,17 @@ class SessionDetailPage extends StatefulWidget {
 }
 
 class _SessionDetailPageState extends State<SessionDetailPage>
-    with DataRevisionLoader<SessionDetailPage> {
-  SessionSummary? _summary;
-  bool _loading = true;
+    with
+        DataRevisionLoader<SessionDetailPage>,
+        SummaryFeedbackLoader<SessionDetailPage> {
+  @override
+  Future<void> reloadData() =>
+      loadSummaryFeedback(context.read<SqlExecutor>(), widget.sessionId);
 
   @override
-  Future<void> reloadData() => _load();
-
-  Future<void> _load() async {
-    final exec = context.read<SqlExecutor>();
-    final summary = await loadSessionSummary(exec, widget.sessionId);
-
-    if (!mounted) return;
-    setState(() {
-      _summary = summary;
-      _loading = false;
-    });
+  void didUpdateWidget(covariant SessionDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionId != widget.sessionId) reloadData();
   }
 
   @override
@@ -68,7 +62,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
         backgroundColor: c.background,
         actions: [
           if (context.watch<RecordManagementController?>() != null &&
-              _summary != null)
+              feedbackSummary != null)
             IconButton(
               tooltip: '删除这场训练',
               onPressed:
@@ -94,18 +88,31 @@ class _SessionDetailPageState extends State<SessionDetailPage>
   }
 
   Widget _body() {
-    if (_loading) {
+    if (feedbackLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    final summary = _summary;
+    final summary = feedbackSummary;
     if (summary == null) {
       // 文案与总结页一字不差。**AppBar 留着**：详情是可以被深链进来的，
       // 这一个状态里若没有返回键，用户就卡在一个死页上。
-      return const Center(child: Text('这场训练不存在'));
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(feedbackError ?? '这场训练不存在'),
+            if (feedbackError != null)
+              TextButton(onPressed: reloadData, child: const Text('重试载入')),
+          ],
+        ),
+      );
     }
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.screenH),
       children: [
+        if (feedbackError != null) ...[
+          Text(feedbackError!),
+          TextButton(onPressed: reloadData, child: const Text('重试载入')),
+        ],
         if (summary.session.note?.isNotEmpty == true)
           Padding(
             padding: const EdgeInsets.only(bottom: 16),
@@ -113,6 +120,10 @@ class _SessionDetailPageState extends State<SessionDetailPage>
           ),
         SessionSummaryView(
           summary: summary,
+          comparisons: feedbackComparisons,
+          comparisonLoading: comparisonsLoading,
+          comparisonError: comparisonError,
+          onComparisonRetry: reloadData,
           onReview: trainingSetActions(context).isEmpty
               ? null
               : (set) => context.push(
@@ -126,7 +137,7 @@ class _SessionDetailPageState extends State<SessionDetailPage>
               name,
               index + 1,
             );
-            if (mounted) await _load();
+            if (mounted) await reloadData();
           },
         ),
       ],

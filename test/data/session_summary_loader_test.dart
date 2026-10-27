@@ -53,6 +53,7 @@ void main() {
       '卧推',
     ], reason: '顺序按 position —— 总结页的动作卡片就是这个先后');
     expect(loaded.exercises.map((e) => e.sets.length).toList(), [2, 1]);
+    expect(loaded.exercises.map((e) => e.exerciseId).toList(), ['e1', 'e2']);
     // 90.6 秒 → 四舍五入到秒；写成截断（90）或除错数量级都会红
     expect(loaded.durationSeconds, 91);
   });

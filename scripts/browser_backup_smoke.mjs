@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const webRoot = path.join(root, 'build', 'web');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const feature = process.env.GYM_BROWSER_FEATURE;
-assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign', 'rest_days', 'builtin_programs', 'calories', 'plugins'].includes(feature));
+assert(!feature || ['import', 'plans', 'workout_efficiency', 'training_redesign', 'rest_days', 'builtin_programs', 'calories', 'plugins', 'training_feedback'].includes(feature));
 const output = path.join(root, 'build', 'acceptance', `browser-${feature || 'backup'}-${stamp}`);
 const chromePath = process.env.CHROME_EXECUTABLE || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',

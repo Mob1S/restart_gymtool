@@ -1,3 +1,4 @@
+import 'metrics.dart';
 import 'types.dart';
 
 /// 总结页上一个动作的卡片内容。
@@ -6,13 +7,20 @@ import 'types.dart';
 /// 这里拿到的是训练记录本身。顺序保持 `position` 升序（记录时的先后），
 /// 界面要把它原样拼成 `8 / 8 / 8` 给人核对。
 class ExerciseSummary {
+  /// Stable identity; renamed or same-named exercises keep separate history.
+  final String exerciseId;
+
   /// 动作名。取不到动作时是「未知动作」而不是 null —— 卡片总得有个标题，
   /// 而历史里引用着已被归档 / 删掉的动作是真实会发生的。
   final String exerciseName;
 
   final List<SetEntry> sets;
 
-  const ExerciseSummary({required this.exerciseName, required this.sets});
+  const ExerciseSummary({
+    required this.exerciseId,
+    required this.exerciseName,
+    required this.sets,
+  });
 }
 
 /// 一场训练的全部数字。
@@ -46,3 +54,18 @@ class SessionSummary {
     required this.volumeLoad,
   });
 }
+
+/// Recorded volume uses canonical kg and includes each performed segment once.
+/// An incomplete parent is excluded, just as it is from the saved summary.
+double recordedSetsVolume(Iterable<SetEntry> sets) => totalVolumeLoad([
+  for (final set in sets)
+    if (set.isCompleted) ...[
+      SetLike(weight: set.weight, reps: set.reps, isCompleted: true),
+      for (final segment in set.detail?.continuations ?? [])
+        SetLike(
+          weight: segment.reading.kilograms,
+          reps: segment.reps,
+          isCompleted: true,
+        ),
+    ],
+]);

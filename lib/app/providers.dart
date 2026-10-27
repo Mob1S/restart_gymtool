@@ -330,6 +330,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
           onChanged: _revision.changed,
         );
       });
+      unawaited(session.ensureResumed());
       _showCatalogNotice(catalogNotice);
     } catch (e) {
       if (mounted) setState(() => _error = e);

@@ -1,6 +1,5 @@
 import '../../domain/metrics.dart';
 import '../../domain/session_summary.dart';
-import '../../domain/types.dart';
 import '../db/sql_executor.dart';
 import 'exercise_repo.dart';
 import 'session_repo.dart';
@@ -35,6 +34,7 @@ Future<SessionSummary?> loadSessionSummary(
     final exercise = await getExercise(exec, se.exerciseId);
     exercises.add(
       ExerciseSummary(
+        exerciseId: se.exerciseId,
         // 动作取不到时写「未知动作」，不崩 —— 与总结页一字不差
         exerciseName: exercise?.name ?? '未知动作',
         sets: done.toList(),
@@ -57,16 +57,6 @@ Future<SessionSummary?> loadSessionSummary(
     totalSets: allSets.length,
     // 容量一律走 metrics.totalVolumeLoad —— 口径只此一份实现，不在这里重算。
     // 组已在上面滤成已完成，所以 isCompleted 恒为 true。
-    volumeLoad: totalVolumeLoad([
-      for (final s in allSets) ...[
-        SetLike(weight: s.weight, reps: s.reps, isCompleted: true),
-        for (final segment in s.detail?.continuations ?? [])
-          SetLike(
-            weight: segment.reading.kilograms,
-            reps: segment.reps,
-            isCompleted: true,
-          ),
-      ],
-    ]),
+    volumeLoad: recordedSetsVolume(allSets),
   );
 }

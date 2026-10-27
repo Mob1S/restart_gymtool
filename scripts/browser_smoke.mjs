@@ -110,8 +110,29 @@ async function clickAt(x, y) {
 async function clickText(text, exact = false) {
   let previous;
   const element = await until(async () => {
-    const matches = (await semantics()).filter(e => !e.disabled && (exact ? e.text === text || e.value === text : e.text.includes(text) || e.value?.includes(text)) && (text.startsWith('收藏 ') || !e.text.startsWith('收藏 ')));
+    const isDestination = ['训练', '历史', '进步'].includes(text);
+    const matches = (await semantics()).filter(e => !e.disabled &&
+      (!isDestination || e.role === 'tab') &&
+      (exact ? e.text === text || e.value === text : e.text.includes(text) || e.value?.includes(text)) &&
+      (text.startsWith('收藏 ') || !e.text.startsWith('收藏 ')));
     const next = matches.sort((a, b) => a.width * a.height - b.width * b.height)[0];
+    if (!next && text === '完成' && await has('训练总结')) {
+      // Long summaries lazily create the final button only after scrolling.
+      const height = await evaluate('innerHeight');
+      await send('Input.dispatchMouseEvent', {type:'mouseWheel',x:180,y:height/2,
+        deltaX:0,deltaY:280});
+      return null;
+    }
+    if (next) {
+      const height = await evaluate('innerHeight');
+      const center = next.y + next.height / 2;
+      if (center < 0 || center > height - 1) {
+        await send('Input.dispatchMouseEvent', {type:'mouseWheel',x:180,y:height/2,
+          deltaX:0,deltaY:center < 0 ? -280 : 280});
+        previous = null;
+        return null;
+      }
+    }
     const stable = next && previous && next.x === previous.x && next.y === previous.y && next.width === previous.width && next.height === previous.height;
     previous = next;
     if(!stable) return null;
@@ -200,6 +221,7 @@ try {
     await expectText('160');
     await screenshot('05-summary');
     await clickText('完成', true);
+    await expectText('开始训练');
   });
   await check('history list to detail and back', async () => {
     await clickText('历史', true);
@@ -263,6 +285,7 @@ try {
     await expectText('8 / 8 / 8 / 8');
     await screenshot('13-four-set-summary');
     await clickText('完成', true);
+    await expectText('开始训练');
     await clickText('历史', true);
     await expectText('4 组 · 1600 kg');
     await screenshot('14-four-set-history');

@@ -1,5 +1,5 @@
 # 环境变量重定向脚本 —— 每个 shell 会话开头 dot-source 它：
-#   . C:\ccproject\restart_gymtool\scripts\env.ps1
+#   . .\scripts\env.ps1
 #
 # 为什么需要它：这台机器上（理论上）沙箱外的家目录不可写，因此把
 # USERPROFILE / HOME / APPDATA / LOCALAPPDATA 全部指到工作区内，让 Flutter /
@@ -8,7 +8,7 @@
 # 注意 USERPROFILE 一个不够 —— 旧项目（React Native 版）文档记着踩过五个位置，
 # Windows 上 APPDATA / LOCALAPPDATA 必须单独设。
 
-$root = "C:\ccproject\restart_gymtool\.tooling"
+$root = Join-Path (Split-Path -Parent $PSScriptRoot) '.tooling'
 
 New-Item -ItemType Directory -Force `
     $root, "$root\home", "$root\appdata", "$root\localappdata", `
